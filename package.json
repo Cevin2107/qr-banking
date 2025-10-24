@@ -2,16 +2,13 @@
   "name": "qr-banking",
   "version": "1.0.0",
   "description": "Ứng dụng tạo mã QR chuyển khoản ngân hàng theo chuẩn VietQR",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "dev": "vercel dev",
-    "build": "echo 'No build step required'",
-    "start": "vercel dev"
+    "dev": "node server.js",
+    "start": "node server.js"
   },
   "keywords": ["qr", "vietqr", "banking", "payment"],
   "author": "Cevin2107",
   "license": "MIT",
-  "dependencies": {
-    "qrcode": "^1.5.3"
-  }
+  "dependencies": {}
 }
