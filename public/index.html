@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tạo Mã QR Chuyển Khoản - VietQR</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏦 Tạo Mã QR Chuyển Khoản</h1>
+            <p>Tạo mã QR thanh toán nhanh chóng, số tiền cố định</p>
+        </header>
+
+        <div class="card">
+            <form id="qrForm">
+                <div class="form-group">
+                    <label for="bankCode">Ngân hàng *</label>
+                    <select id="bankCode" required>
+                        <option value="">-- Chọn ngân hàng --</option>
+                        <option value="VCB">Vietcombank</option>
+                        <option value="TCB">Techcombank</option>
+                        <option value="CTG">VietinBank</option>
+                        <option value="BIDV">BIDV</option>
+                        <option value="ACB">ACB</option>
+                        <option value="VPB">VPBank</option>
+                        <option value="TPB">TPBank</option>
+                        <option value="STB">Sacombank</option>
+                        <option value="MB">MB Bank</option>
+                        <option value="AGR">Agribank</option>
+                        <option value="SHB">SHB</option>
+                        <option value="EIB">Eximbank</option>
+                        <option value="MSB">MSB</option>
+                        <option value="OCB">OCB</option>
+                        <option value="SEA">SeABank</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="accountNumber">Số tài khoản *</label>
+                    <input type="text" id="accountNumber" placeholder="Nhập số tài khoản" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="accountName">Tên chủ tài khoản</label>
+                    <input type="text" id="accountName" placeholder="NGUYEN VAN A">
+                </div>
+
+                <div class="form-group">
+                    <label for="amount">Số tiền (VNĐ) *</label>
+                    <input type="number" id="amount" placeholder="50000" min="1000" step="1000" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Nội dung chuyển khoản</label>
+                    <input type="text" id="description" placeholder="Thanh toan don hang" maxlength="25">
+                    <small>Tối đa 25 ký tự, không dấu</small>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" id="saveBtn" class="btn btn-secondary">
+                        💾 Lưu thông tin TK
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        🎯 Tạo mã QR
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div id="qrResult" class="qr-result" style="display: none;">
+            <div class="card">
+                <h2>✅ Mã QR của bạn</h2>
+                <div class="qr-display">
+                    <img id="qrImage" src="" alt="QR Code">
+                </div>
+                <div class="qr-info">
+                    <p><strong>Ngân hàng:</strong> <span id="displayBank"></span></p>
+                    <p><strong>Số TK:</strong> <span id="displayAccount"></span></p>
+                    <p><strong>Số tiền:</strong> <span id="displayAmount"></span> VNĐ</p>
+                    <p><strong>Nội dung:</strong> <span id="displayDescription"></span></p>
+                </div>
+                <button id="downloadBtn" class="btn btn-download">
+                    ⬇️ Tải xuống mã QR
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
