@@ -3,7 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tạo Mã QR Chuyển Khoản - VietQR</title>
+    <meta name="description" content="Tạo mã QR chuyển khoản ngân hàng nhanh chóng, số tiền cố định với CevinPay">
+    <meta name="theme-color" content="#0066FF">
+    <title>CevinPay - Tạo Mã QR Chuyển Khoản</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Favicon và Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/image-192.png">
+    <link rel="apple-touch-icon" href="/image-192.png">
+    
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -111,5 +121,19 @@
     </div>
 
     <script src="script.js"></script>
+    <script>
+        // Đăng ký Service Worker cho PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then((registration) => {
+                        console.log('ServiceWorker registered:', registration);
+                    })
+                    .catch((error) => {
+                        console.log('ServiceWorker registration failed:', error);
+                    });
+            });
+        }
+    </script>
 </body>
 </html>
