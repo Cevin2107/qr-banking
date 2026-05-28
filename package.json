@@ -1,0 +1,14 @@
+{
+  "name": "qr-banking",
+  "version": "1.0.0",
+  "description": "Ứng dụng tạo mã QR chuyển khoản ngân hàng theo chuẩn VietQR",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "keywords": ["qr", "vietqr", "banking", "payment"],
+  "author": "Cevin2107",
+  "license": "MIT",
+  "dependencies": {}
+}
