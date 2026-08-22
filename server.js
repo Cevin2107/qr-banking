@@ -1,8 +1,9 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3000;
+let PORT = parseInt(process.env.PORT, 10) || 3000;
 
 function normalizeBankId(bankCode) {
   return String(bankCode || '').trim();
@@ -45,6 +46,50 @@ const server = http.createServer(async (req, res) => {
   
   console.log(`📥 ${req.method} ${url.pathname}`);
   
+  // API proxy cho ảnh VietQR (tránh lỗi CORS khi vẽ lên canvas)
+  if (url.pathname === '/api/qr-proxy') {
+    let targetUrl = url.searchParams.get('url');
+    if (!targetUrl || (!targetUrl.startsWith('https://img.vietqr.io/') && !targetUrl.startsWith('https://api.vietqr.io/'))) {
+      res.writeHead(400);
+      res.end('URL không hợp lệ');
+      return;
+    }
+
+    const fetchWithRedirects = (currentUrl, redirectsLeft = 5) => {
+      if (redirectsLeft <= 0) {
+        res.writeHead(500);
+        res.end('Too many redirects');
+        return;
+      }
+
+      https.get(currentUrl, (proxyRes) => {
+        if ([301, 302, 307, 308].includes(proxyRes.statusCode) && proxyRes.headers.location) {
+          let redir = proxyRes.headers.location;
+          if (redir.startsWith('/')) {
+            const u = new URL(currentUrl);
+            redir = `${u.origin}${redir}`;
+          }
+          fetchWithRedirects(redir, redirectsLeft - 1);
+          return;
+        }
+
+        res.writeHead(proxyRes.statusCode, {
+          'Content-Type': proxyRes.headers['content-type'] || 'image/png',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=86400'
+        });
+        proxyRes.pipe(res);
+      }).on('error', (err) => {
+        console.error('❌ Proxy error:', err);
+        res.writeHead(500);
+        res.end('Proxy Error: ' + err.message);
+      });
+    };
+
+    fetchWithRedirects(targetUrl);
+    return;
+  }
+
   // API endpoint để tạo QR
   if (url.pathname === '/api/generate-qr') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -129,13 +174,27 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log('');
-  console.log('🎉 ================================');
-  console.log('🚀 Server đang chạy tại:');
-  console.log(`   http://localhost:${PORT}`);
-  console.log('🎉 ================================');
-  console.log('');
-  console.log('📝 Nhấn Ctrl+C để dừng server');
-  console.log('');
+function startServer(portToUse) {
+  server.listen(portToUse, () => {
+    console.log('');
+    console.log('🎉 ================================');
+    console.log('🚀 Server đang chạy tại:');
+    console.log(`   http://localhost:${portToUse}`);
+    console.log('🎉 ================================');
+    console.log('');
+    console.log('📝 Nhấn Ctrl+C để dừng server');
+    console.log('');
+  });
+}
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`⚠️ Cổng ${PORT} đang bị chiếm dụng. Đang tự động thử cổng ${PORT + 1}...`);
+    PORT++;
+    startServer(PORT);
+  } else {
+    console.error('❌ Lỗi Server:', err);
+  }
 });
+
+startServer(PORT);

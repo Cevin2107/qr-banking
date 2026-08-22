@@ -1,484 +1,202 @@
-const VIETQR_BANKS_API = 'https://api.vietqr.io/v2/banks';
-const BANK_NAMES = {};
-const BANK_LOGOS = {};
-const BANK_IDS_BY_CODE = {};
-const BANK_META_BY_BIN = {};
-let bankOptionsCache = [];
-let lastQrPayload = null;
+// CevinPay — QR gắn cố định tài khoản Techcombank, tự làm mới theo input.
 
-async function loadBanks() {
-    const bankSelect = document.getElementById('bankCode');
-    const bankOptions = document.getElementById('bankOptions');
+const ACCOUNTS = {
+    TCB: {
+        bin: '970407',
+        code: 'TCB',
+        shortName: 'Techcombank',
+        fullName: 'Ngân hàng TMCP Kỹ Thương Việt Nam',
+        accountNumber: '19037817132016',
+        accountHolder: 'DAO BA ANH QUAN',
+        logoUrl: 'https://cdn.vietqr.io/img/TCB.png'
+    },
+    TPB: {
+        bin: '970423',
+        code: 'TPB',
+        shortName: 'TPBank',
+        fullName: 'Ngân hàng TMCP Tiên Phong',
+        accountNumber: '10002150181',
+        accountHolder: 'DAO BA ANH QUAN',
+        logoUrl: 'https://cdn.vietqr.io/img/TPB.png'
+    }
+};
+
+let currentBankKey = 'TCB';
+const DEBOUNCE_MS = 450;
+
+function getActiveAccount() {
+    return ACCOUNTS[currentBankKey] || ACCOUNTS.TCB;
+}
+
+const amountInput = document.getElementById('amount');
+const descriptionInput = document.getElementById('description');
+const qrConsole = document.getElementById('qrConsole');
+const qrForm = document.getElementById('qrForm');
+const qrImg = document.getElementById('qrImage');
+const qrFrame = document.querySelector('.qr-frame');
+const statusChip = document.getElementById('statusChip');
+const statusText = document.getElementById('statusText');
+const displayAmount = document.getElementById('displayAmount');
+const displayDescription = document.getElementById('displayDescription');
+const accountValue = document.getElementById('accountValue');
+const downloadBtn = document.getElementById('downloadBtn');
+const copyAccountBtn = document.getElementById('copyAccountBtn');
+const deeplinkBtn = document.getElementById('deeplinkBtn');
+const barClose = document.getElementById('barClose');
+const announcementBar = document.getElementById('announcementBar');
+
+let debounceTimer = null;
+let requestSeq = 0;
+let currentQrSrc = '';
+
+/* ============ Format tiền (dấu chấm ngăn cách, chuẩn vi-VN) ============ */
+
+function formatMoney(value) {
+    const digits = String(value).replace(/\D/g, '');
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function parseMoney(value) {
+    const digits = String(value).replace(/\D/g, '');
+    if (!digits) return '';
+    const parsed = String(parseInt(digits, 10));
+    return parsed === '0' ? '' : parsed;
+}
+
+function formatDisplayAmount(amount) {
+    return amount ? `${formatMoney(amount)} ₫` : '—';
+}
+
+/* ============ Nguồn ảnh QR ============ */
+
+function buildDirectQrUrl(addInfo) {
+    const acc = getActiveAccount();
+    const params = new URLSearchParams();
+    if (addInfo) params.set('addInfo', addInfo);
+    const query = params.toString();
+    return `https://img.vietqr.io/image/${acc.bin}-${acc.accountNumber}-qr_only.png${query ? `?${query}` : ''}`;
+}
+
+async function fetchQrSrc(amount, description) {
+    const acc = getActiveAccount();
+    if (!amount) {
+        return buildDirectQrUrl(description);
+    }
+
+    const params = new URLSearchParams({
+        bankCode: acc.bin,
+        accountNumber: acc.accountNumber,
+        amount,
+        description
+    });
+
+    const response = await fetch(`/api/generate-qr?${params}`);
+    if (!response.ok) {
+        throw new Error(`API trả mã lỗi ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data.success || !data.qrCode) {
+        throw new Error(data.error || 'Không tạo được mã QR');
+    }
+    return data.qrCode;
+}
+
+/* ============ Trạng thái console ============ */
+
+function setStatus(state, text) {
+    statusChip.classList.remove('is-ready', 'is-error');
+    if (state === 'ready') statusChip.classList.add('is-ready');
+    if (state === 'error') statusChip.classList.add('is-error');
+    statusText.textContent = text;
+}
+
+function updateDetailRows(amount, description) {
+    displayAmount.textContent = formatDisplayAmount(amount);
+    displayDescription.textContent = description || '—';
+}
+
+function applyQr(src) {
+    currentQrSrc = src;
+    if (qrImg.getAttribute('src') === src) {
+        qrFrame.classList.remove('is-refreshing');
+        setStatus('ready', 'Sẵn sàng nhận');
+        return;
+    }
+    qrImg.src = src;
+}
+
+qrImg.addEventListener('load', () => {
+    qrFrame.classList.remove('is-refreshing');
+    setStatus('ready', 'Sẵn sàng nhận');
+});
+
+qrImg.addEventListener('error', () => {
+    qrFrame.classList.remove('is-refreshing');
+    setStatus('error', 'Lỗi tải mã QR');
+});
+
+/* ============ Cập nhật trực tiếp (debounce) ============ */
+
+function scheduleQrRefresh() {
+    qrFrame.classList.add('is-refreshing');
+    setStatus('busy', 'Đang đồng bộ…');
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(refreshQr, DEBOUNCE_MS);
+}
+
+async function refreshQr() {
+    const amount = parseMoney(amountInput.value);
+    const description = descriptionInput.value.trim();
+    const seq = ++requestSeq;
+
+    updateDetailRows(amount, description);
 
     try {
-        const response = await fetch(VIETQR_BANKS_API);
-        const data = await response.json();
-
-        if (!data || data.code !== '00' || !Array.isArray(data.data)) {
-            throw new Error('Bank list response is invalid');
-        }
-
-        const sortedBanks = data.data
-            .filter((bank) => bank && bank.bin && bank.shortName)
-            .sort((a, b) => String(a.shortName).localeCompare(String(b.shortName), 'vi'));
-
-        bankOptions.innerHTML = '';
-        bankOptionsCache = [];
-
-        sortedBanks.forEach((bank) => {
-            const bankId = String(bank.bin);
-            const displayName = `${bank.shortName} - ${bank.name}`;
-
-            BANK_NAMES[bankId] = bank.shortName || bank.name || bankId;
-            if (bank.logo) {
-                BANK_LOGOS[bankId] = bank.logo;
-            }
-            if (bank.code) {
-                BANK_IDS_BY_CODE[String(bank.code).toUpperCase()] = bankId;
-            }
-            if (bank.shortName) {
-                BANK_IDS_BY_CODE[String(bank.shortName).toUpperCase()] = bankId;
-            }
-
-            BANK_META_BY_BIN[bankId] = {
-                code: bank.code || bank.shortName || '',
-                shortName: bank.shortName || '',
-                name: bank.name || ''
-            };
-
-            const option = document.createElement('li');
-            option.className = 'bank-option';
-            option.dataset.bankId = bankId;
-            option.dataset.label = displayName;
-            option.textContent = displayName;
-            bankOptions.appendChild(option);
-            bankOptionsCache.push(option);
-        });
-
-        setSelectedBank('');
+        const src = await fetchQrSrc(amount, description);
+        if (seq !== requestSeq) return;
+        applyQr(src);
     } catch (error) {
-        console.error('Failed to load bank list:', error);
-        alert('❌ Không tải được danh sách ngân hàng. Vui lòng thử lại sau.');
+        if (seq !== requestSeq) return;
+        qrFrame.classList.remove('is-refreshing');
+        setStatus('error', 'Lỗi tải mã QR');
+        console.error('QR refresh failed:', error);
     }
 }
 
-// Hàm tạo bill QR phong cách trẻ trung, hiện đại
-async function createQRBill(qrImageUrl, bankCode, accountNumber, amount, description) {
-    const canvas = document.getElementById('qrCanvas');
-    const ctx = canvas.getContext('2d');
+/* ============ Input số tiền: format + giữ vị trí con trỏ ============ */
 
-    // Kích thước vé
-    const width = 520;
-    const height = 800;
-    canvas.width = width;
-    canvas.height = height;
+amountInput.addEventListener('input', (e) => {
+    const cursorPosition = e.target.selectionStart;
+    const oldValue = e.target.value;
+    const oldLength = oldValue.length;
 
-    // ===== NỀN GRADIENT MỀM MẠI =====
-    const bgGradient = ctx.createLinearGradient(0, 0, width, height);
-    bgGradient.addColorStop(0, '#fef3c7');
-    bgGradient.addColorStop(0.5, '#fef9c3');
-    bgGradient.addColorStop(1, '#fef3c7');
-    ctx.fillStyle = bgGradient;
-    ctx.fillRect(0, 0, width, height);
+    const formatted = formatMoney(oldValue);
+    e.target.value = formatted;
 
-    // ===== HOA VĂN TRANG TRÍ - VÒNG TRÒN MÀU SẮC =====
-    // Vòng tròn lớn góc trên trái
-    ctx.globalAlpha = 0.15;
-    ctx.fillStyle = '#0066FF';
-    ctx.beginPath();
-    ctx.arc(-30, -30, 120, 0, Math.PI * 2);
-    ctx.fill();
+    const newLength = formatted.length;
+    const newPosition = Math.max(0, cursorPosition + (newLength - oldLength));
+    e.target.setSelectionRange(newPosition, newPosition);
 
-    // Vòng tròn nhỏ góc trên phải
-    ctx.fillStyle = '#FFB800';
-    ctx.beginPath();
-    ctx.arc(width + 30, 80, 80, 0, Math.PI * 2);
-    ctx.fill();
+    scheduleQrRefresh();
+});
 
-    // Vòng tròn góc dưới trái
-    ctx.fillStyle = '#10b981';
-    ctx.beginPath();
-    ctx.arc(60, height + 40, 100, 0, Math.PI * 2);
-    ctx.fill();
+descriptionInput.addEventListener('input', () => {
+    updateDetailRows(parseMoney(amountInput.value), descriptionInput.value.trim());
+    scheduleQrRefresh();
+});
 
-    // Vòng tròn nhỏ rải rác
-    ctx.fillStyle = '#0066FF';
-    ctx.beginPath();
-    ctx.arc(width - 80, height - 120, 50, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#FFB800';
-    ctx.beginPath();
-    ctx.arc(100, 400, 35, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.globalAlpha = 1;
-
-    // ===== KHUNG TRẮNG CHÍNH BO TRÒN =====
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
-    ctx.shadowBlur = 30;
-    ctx.shadowOffsetY = 10;
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.roundRect(30, 30, width - 60, height - 60, 35);
-    ctx.fill();
-
-    // Tắt bóng
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-
-    // ===== ĐƯỜNG VIỀN MÀU TRÊN KHUNG =====
-    const borderGradient = ctx.createLinearGradient(30, 30, width - 30, 30);
-    borderGradient.addColorStop(0, '#FFB800');
-    borderGradient.addColorStop(0.5, '#0066FF');
-    borderGradient.addColorStop(1, '#FFB800');
-    ctx.strokeStyle = borderGradient;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(65, 30);
-    ctx.lineTo(width - 65, 30);
-    ctx.stroke();
-
-    // Đường viền dưới
-    const borderGradient2 = ctx.createLinearGradient(30, height - 30, width - 30, height - 30);
-    borderGradient2.addColorStop(0, '#0066FF');
-    borderGradient2.addColorStop(0.5, '#FFB800');
-    borderGradient2.addColorStop(1, '#0066FF');
-    ctx.strokeStyle = borderGradient2;
-    ctx.beginPath();
-    ctx.moveTo(65, height - 30);
-    ctx.lineTo(width - 65, height - 30);
-    ctx.stroke();
-
-    // ===== HEADER - BRAND NAME =====
-    ctx.textAlign = 'center';
-
-    // Vẽ hình tròn trang trí bên trái
-    ctx.fillStyle = '#FFB800';
-    ctx.beginPath();
-    ctx.arc(120, 90, 12, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Vẽ hình tròn trang trí bên phải
-    ctx.fillStyle = '#0066FF';
-    ctx.beginPath();
-    ctx.arc(width - 120, 90, 12, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Brand text
-    ctx.font = 'bold 52px Arial, sans-serif';
-    const cevinText = 'Cevin';
-    const payText = 'Pay';
-    const cevinWidth = ctx.measureText(cevinText).width;
-    const totalWidth = ctx.measureText('CevinPay').width;
-
-    // "Cevin" màu vàng
-    ctx.fillStyle = '#FFB800';
-    ctx.fillText(cevinText, width / 2 - totalWidth / 2 + cevinWidth / 2, 100);
-
-    // "Pay" màu xanh
-    ctx.fillStyle = '#0066FF';
-    ctx.fillText(payText, width / 2 - totalWidth / 2 + cevinWidth + ctx.measureText(payText).width / 2, 100);
-
-    // ===== LOAD QR CODE =====
-    const qrImg = new Image();
-    qrImg.crossOrigin = 'anonymous';
-
-    return new Promise((resolve) => {
-        qrImg.onload = async () => {
-            // ===== KHUNG QR CODE BO TRÒN =====
-            const qrSize = 290;
-            const qrX = (width - qrSize) / 2;
-            const qrY = 140;
-
-            // Nền trắng cho QR
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.12)';
-            ctx.shadowBlur = 25;
-            ctx.shadowOffsetY = 8;
-
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.roundRect(qrX - 20, qrY - 20, qrSize + 40, qrSize + 40, 25);
-            ctx.fill();
-
-            // Đường viền gradient cho QR
-            ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
-
-            // Viền trên
-            ctx.strokeStyle = '#FFB800';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(qrX - 20 + 25, qrY - 20);
-            ctx.lineTo(qrX + qrSize + 20 - 25, qrY - 20);
-            ctx.stroke();
-
-            // Viền phải
-            ctx.strokeStyle = '#0066FF';
-            ctx.beginPath();
-            ctx.moveTo(qrX + qrSize + 20, qrY - 20 + 25);
-            ctx.lineTo(qrX + qrSize + 20, qrY + qrSize + 20 - 25);
-            ctx.stroke();
-
-            // Viền dưới
-            ctx.strokeStyle = '#0066FF';
-            ctx.beginPath();
-            ctx.moveTo(qrX + qrSize + 20 - 25, qrY + qrSize + 20);
-            ctx.lineTo(qrX - 20 + 25, qrY + qrSize + 20);
-            ctx.stroke();
-
-            // Viền trái
-            ctx.strokeStyle = '#FFB800';
-            ctx.beginPath();
-            ctx.moveTo(qrX - 20, qrY + qrSize + 20 - 25);
-            ctx.lineTo(qrX - 20, qrY - 20 + 25);
-            ctx.stroke();
-
-            // Vẽ QR code
-            ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
-
-            // Góc trang trí cho khung QR
-            ctx.fillStyle = '#FFB800';
-            ctx.beginPath();
-            ctx.arc(qrX - 20, qrY - 20, 8, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#0066FF';
-            ctx.beginPath();
-            ctx.arc(qrX + qrSize + 20, qrY - 20, 8, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.beginPath();
-            ctx.arc(qrX + qrSize + 20, qrY + qrSize + 20, 8, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#FFB800';
-            ctx.beginPath();
-            ctx.arc(qrX - 20, qrY + qrSize + 20, 8, 0, Math.PI * 2);
-            ctx.fill();
-
-            // ===== ĐƯỜNG NGANG TRANG TRÍ =====
-            const lineY = qrY + qrSize + 70;
-
-            // Đường kẻ đứt
-            ctx.strokeStyle = '#ddd';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([8, 6]);
-            ctx.beginPath();
-            ctx.moveTo(60, lineY);
-            ctx.lineTo(width - 60, lineY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-
-            // Hai chấm tròn đầu đường
-            ctx.fillStyle = '#0066FF';
-            ctx.beginPath();
-            ctx.arc(60, lineY, 6, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#FFB800';
-            ctx.beginPath();
-            ctx.arc(width - 60, lineY, 6, 0, Math.PI * 2);
-            ctx.fill();
-
-            // ===== SỐ TIỀN =====
-            ctx.textAlign = 'center';
-            ctx.font = '600 18px Arial, sans-serif';
-            ctx.fillStyle = '#6b7280';
-            ctx.fillText('Số tiền', width / 2, lineY + 35);
-
-            const formattedAmount = parseInt(amount).toLocaleString('vi-VN');
-            ctx.font = 'bold 42px Arial, sans-serif';
-            ctx.fillStyle = '#0066FF';
-            ctx.fillText(formattedAmount + ' VNĐ', width / 2, lineY + 85);
-
-            // ===== LOGO NGÂN HÀNG =====
-            const bankLogoUrl = BANK_LOGOS[bankCode];
-            if (bankLogoUrl) {
-                const bankLogo = new Image();
-                bankLogo.crossOrigin = 'anonymous';
-
-                bankLogo.onload = () => {
-                    const maxLogoWidth = 200;
-                    const maxLogoHeight = 55;
-                    const naturalWidth = bankLogo.naturalWidth;
-                    const naturalHeight = bankLogo.naturalHeight;
-
-                    let logoWidth = naturalWidth;
-                    let logoHeight = naturalHeight;
-                    const ratio = Math.min(maxLogoWidth / naturalWidth, maxLogoHeight / naturalHeight);
-                    logoWidth = naturalWidth * ratio;
-                    logoHeight = naturalHeight * ratio;
-
-                    const logoX = (width - logoWidth) / 2;
-                    const logoY = lineY + 110;
-
-                    // Bóng cho logo
-                    ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
-                    ctx.shadowBlur = 10;
-                    ctx.drawImage(bankLogo, logoX, logoY, logoWidth, logoHeight);
-                    ctx.shadowColor = 'transparent';
-
-                    // Số tài khoản
-                    let currentY = logoY + logoHeight + 45;
-                    ctx.font = '600 23px Arial, sans-serif';
-                    ctx.fillStyle = '#374151';
-                    ctx.fillText('STK: ' + accountNumber, width / 2, currentY);
-
-                    // ===== FOOTER - ĐƯA XUỐNG DƯỚI CÙNG =====
-                    ctx.font = '500 14px Arial, sans-serif';
-                    ctx.fillStyle = '#9ca3af';
-                    ctx.fillText('Generated via CevinPay', width / 2, height - 55);
-
-                    // ===== NỘI DUNG CHUYỂN KHOẢN - ĐƯA XUỐNG DƯỚI SỐ TÀI KHOẢN =====
-                    if (description && description.trim()) {
-                        currentY += 26;
-
-                        ctx.font = 'italic 18px Arial, sans-serif';
-                        ctx.fillStyle = '#6b7280';
-                        ctx.fillText('"' + description + '"', width / 2, currentY);
-                    }
-
-                    resolve();
-                };
-
-                bankLogo.onerror = () => {
-                    drawYouthfulFallback(ctx, width, height, lineY, BANK_NAMES[bankCode], accountNumber, description);
-                    resolve();
-                };
-
-                bankLogo.src = bankLogoUrl;
-            } else {
-                drawYouthfulFallback(ctx, width, height, lineY, BANK_NAMES[bankCode], accountNumber, description);
-                resolve();
-            }
-        };
-
-        qrImg.onerror = () => {
-            console.error('Failed to load QR image');
-            resolve();
-        };
-
-        qrImg.src = qrImageUrl;
-    });
-}
-
-// Hàm vẽ fallback khi không có logo
-function drawYouthfulFallback(ctx, width, height, lineY, bankName, accountNumber, description) {
-    ctx.textAlign = 'center';
-    let currentY = lineY + 130;
-
-    // Tên ngân hàng
-    ctx.font = 'bold 28px Arial, sans-serif';
-    ctx.fillStyle = '#0066FF';
-    ctx.fillText(bankName, width / 2, currentY);
-
-    currentY += 60;
-    ctx.font = '600 23px Arial, sans-serif';
-    ctx.fillStyle = '#374151';
-    ctx.fillText('STK: ' + accountNumber, width / 2, currentY);
-
-    // Footer xuống dưới cùng
-    ctx.font = '500 14px Arial, sans-serif';
-    ctx.fillStyle = '#9ca3af';
-    ctx.fillText('Generated via CevinPay', width / 2, height - 55);
-
-    // Nội dung chuyển khoản xuống dưới STK
-    if (description && description.trim()) {
-        currentY += 30;
-        ctx.font = 'italic 18px Arial, sans-serif';
-        ctx.fillStyle = '#6b7280';
-        ctx.fillText('"' + description + '"', width / 2, currentY);
+qrForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    clearTimeout(debounceTimer);
+    refreshQr();
+    if (qrConsole) {
+        qrConsole.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-}
+});
 
-// Hàm vẽ thông tin fallback khi không có logo
-function drawFallbackInfo(ctx, width, currentY, bankName, accountNumber, description, height) {
-    // Tên ngân hàng
-    ctx.font = 'bold 30px Arial, sans-serif';
-    ctx.fillStyle = '#1e293b';
-    ctx.textAlign = 'center';
-    ctx.fillText(bankName, width / 2, currentY);
-
-    // Số tài khoản
-    currentY += 60;
-    ctx.font = '600 24px Arial, sans-serif';
-    ctx.fillStyle = '#334155';
-    ctx.fillText('STK: ' + accountNumber, width / 2, currentY);
-
-    // Nội dung
-    if (description && description.trim()) {
-        currentY += 26;
-        ctx.font = 'italic 20px Arial, sans-serif';
-        ctx.fillStyle = '#64748b';
-        ctx.fillText('"' + description + '"', width / 2, currentY);
-    }
-
-    // Footer
-    currentY = height - 75;
-    ctx.font = '500 16px Arial, sans-serif';
-    ctx.fillStyle = '#94a3b8';
-
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(100, currentY - 20);
-    ctx.lineTo(width - 100, currentY - 20);
-    ctx.stroke();
-
-    ctx.fillText('Admit One · Generated via CevinPay', width / 2, currentY);
-}
-
-
-// Hàm format số tiền với dấu phẩy
-function formatMoney(value) {
-    // Loại bỏ tất cả ký tự không phải số
-    const number = value.replace(/\D/g, '');
-    // Thêm dấu phẩy ngăn cách hàng nghìn
-    return number.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-// Hàm loại bỏ dấu phẩy để lấy số thuần
-function parseMoney(value) {
-    return value.replace(/,/g, '');
-}
-
-function getSelectedBankMeta() {
-    const bankSelect = document.getElementById('bankCode');
-    const bankId = bankSelect.value;
-    const bankMeta = BANK_META_BY_BIN[bankId] || {};
-    const bankDisplay = bankMeta.shortName && bankMeta.name
-        ? `${bankMeta.shortName} - ${bankMeta.name}`
-        : bankMeta.shortName || bankMeta.name || '';
-
-    return {
-        bankBin: bankId,
-        bankCode: bankMeta.code || '',
-        bankShortName: bankMeta.shortName || '',
-        bankDisplay
-    };
-}
-
-function buildVietQrDeeplink(payload) {
-    const bankCodeRaw = payload.bankCode || payload.bankShortName || payload.bankBin || '';
-    const bankCode = bankCodeRaw ? String(bankCodeRaw).toLowerCase() : '';
-    if (!payload.accountNumber || !bankCode) {
-        return null;
-    }
-
-    const params = new URLSearchParams();
-    params.set('app', bankCode);
-    params.set('ba', `${payload.accountNumber}@${bankCode}`);
-
-    if (payload.amount) {
-        params.set('am', String(payload.amount));
-    }
-    if (payload.description) {
-        params.set('tn', String(payload.description));
-    }
-
-    return `https://dl.vietqr.io/pay?${params.toString()}`;
-}
+/* ============ Sao chép ============ */
 
 async function copyToClipboard(text) {
     try {
@@ -489,245 +207,427 @@ async function copyToClipboard(text) {
     }
 }
 
-function setSelectedBank(bankId) {
-    const bankSelect = document.getElementById('bankCode');
-    const bankSelectText = document.getElementById('bankSelectText');
-    const bankMeta = BANK_META_BY_BIN[bankId] || {};
-    const displayText = bankMeta.shortName && bankMeta.name
-        ? `${bankMeta.shortName} - ${bankMeta.name}`
-        : bankMeta.shortName || bankMeta.name || '-- Chọn ngân hàng --';
-
-    bankSelect.value = bankId;
-    bankSelectText.textContent = displayText;
-
-    bankOptionsCache.forEach((option) => {
-        option.classList.toggle('is-active', option.dataset.bankId === bankId);
-    });
+function flashButton(btn, copiedText) {
+    const originalText = btn.textContent;
+    btn.textContent = copiedText;
+    btn.classList.add('is-copied');
+    setTimeout(() => {
+        btn.textContent = originalText;
+        btn.classList.remove('is-copied');
+    }, 1600);
 }
 
-function filterBankOptions(keyword) {
-    const needle = String(keyword || '').trim().toLowerCase();
-    bankOptionsCache.forEach((option) => {
-        const label = String(option.dataset.label || '').toLowerCase();
-        option.style.display = label.includes(needle) ? '' : 'none';
+copyAccountBtn.addEventListener('click', async () => {
+    const acc = getActiveAccount();
+    if (await copyToClipboard(acc.accountNumber)) {
+        flashButton(copyAccountBtn, 'Đã sao chép ✓');
+    }
+});
+
+function buildVietQrDeeplink(amount, description) {
+    const acc = getActiveAccount();
+    const app = acc.code.toLowerCase();
+    const params = new URLSearchParams({
+        app,
+        ba: `${acc.accountNumber}@${app}`
     });
+    if (amount) params.set('am', amount);
+    if (description) params.set('tn', description);
+    return `https://dl.vietqr.io/pay?${params.toString()}`;
 }
 
-function setupBankDropdown() {
-    const bankSelect = document.getElementById('bankSelect');
-    const bankSelectTrigger = document.getElementById('bankSelectTrigger');
-    const bankSelectPanel = document.getElementById('bankSelectPanel');
-    const bankSearch = document.getElementById('bankSearch');
-    const bankOptions = document.getElementById('bankOptions');
+deeplinkBtn.addEventListener('click', async () => {
+    const amount = parseMoney(amountInput.value);
+    const description = descriptionInput.value.trim();
+    const deeplink = buildVietQrDeeplink(amount, description);
+    if (await copyToClipboard(deeplink)) {
+        flashButton(deeplinkBtn, 'Đã sao chép ✓');
+    }
+});
 
-    bankSelectTrigger.addEventListener('click', () => {
-        bankSelect.classList.toggle('open');
-        if (bankSelect.classList.contains('open')) {
-            bankSearch.focus();
-        }
-    });
+/* ============ Tải bill PNG — phong cách editorial trắng/đen ============ */
 
-    bankSearch.addEventListener('input', (e) => {
-        filterBankOptions(e.target.value);
-    });
+const BILL_W = 1080;
+const BILL_MARGIN = 96;
 
-    bankSearch.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-        }
-    });
-
-    bankOptions.addEventListener('click', (e) => {
-        const option = e.target.closest('.bank-option');
-        if (!option) {
-            return;
-        }
-
-        setSelectedBank(option.dataset.bankId);
-        bankSelect.classList.remove('open');
-    });
-
-    document.addEventListener('click', (e) => {
-        if (!bankSelect.contains(e.target) && bankSelectPanel) {
-            bankSelect.classList.remove('open');
-        }
-    });
+async function ensureBillFonts() {
+    try {
+        await Promise.all([
+            document.fonts.load('500 24px "IBM Plex Mono"'),
+            document.fonts.load('500 96px "Space Grotesk"'),
+            document.fonts.load('500 30px "Inter"')
+        ]);
+    } catch (error) {
+        /* dùng font fallback nếu không tải được */
+    }
 }
 
-// Xử lý format số tiền khi người dùng nhập
-const amountInput = document.getElementById('amount');
-amountInput.addEventListener('input', (e) => {
-    const cursorPosition = e.target.selectionStart;
-    const oldValue = e.target.value;
-    const oldLength = oldValue.length;
+async function loadQrImageForBill(src) {
+    if (!src) return null;
     
-    // Format giá trị mới
-    const formatted = formatMoney(e.target.value);
-    e.target.value = formatted;
-    
-    // Điều chỉnh vị trí con trỏ sau khi format
-    const newLength = formatted.length;
-    const newPosition = cursorPosition + (newLength - oldLength);
-    e.target.setSelectionRange(newPosition, newPosition);
-});
-
-// Load dữ liệu đã lưu từ Local Storage
-window.addEventListener('DOMContentLoaded', async () => {
-    await loadBanks();
-    setupBankDropdown();
-
-    const savedData = localStorage.getItem('bankAccountInfo');
-    if (savedData) {
-        const data = JSON.parse(savedData);
-        const savedBankCode = String(data.bankCode || '').trim();
-        const normalizedCode = savedBankCode.toUpperCase();
-
-        if (savedBankCode && !BANK_NAMES[savedBankCode] && BANK_IDS_BY_CODE[normalizedCode]) {
-            setSelectedBank(BANK_IDS_BY_CODE[normalizedCode]);
-        } else {
-            setSelectedBank(savedBankCode);
-        }
-
-        document.getElementById('accountNumber').value = data.accountNumber || '';
+    let realUrl = src;
+    if (realUrl.includes('/api/qr-proxy?url=')) {
+        realUrl = decodeURIComponent(realUrl.split('/api/qr-proxy?url=')[1]);
     }
-});
-
-// Lưu thông tin tài khoản
-document.getElementById('saveBtn').addEventListener('click', () => {
-    const bankCode = document.getElementById('bankCode').value;
-    const accountNumber = document.getElementById('accountNumber').value;
-
-    if (!bankCode || !accountNumber) {
-        alert('⚠️ Vui lòng nhập đầy đủ ngân hàng và số tài khoản!');
-        return;
-    }
-
-    const accountInfo = {
-        bankCode,
-        accountNumber
-    };
-
-    localStorage.setItem('bankAccountInfo', JSON.stringify(accountInfo));
-    alert('✅ Đã lưu thông tin tài khoản!');
-});
-
-// Xử lý form tạo QR
-document.getElementById('qrForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const bankCode = document.getElementById('bankCode').value;
-    const accountNumber = document.getElementById('accountNumber').value;
-    const amountFormatted = document.getElementById('amount').value;
-    const description = document.getElementById('description').value;
-
-    // Chuyển số tiền đã format về số thuần
-    const amount = parseMoney(amountFormatted);
-
-    if (!bankCode || !accountNumber || !amount) {
-        alert('⚠️ Vui lòng điền đầy đủ thông tin bắt buộc!');
-        return;
-    }
-
-    if (parseFloat(amount) < 1000) {
-        alert('⚠️ Số tiền phải từ 1,000 VNĐ trở lên!');
-        return;
-    }
-
-    // Hiển thị loading
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    const originalText = submitBtn.textContent;
-    submitBtn.textContent = '⏳ Đang tạo...';
-    submitBtn.disabled = true;
 
     try {
-        // Gọi API tạo QR
-        const params = new URLSearchParams({
-            bankCode,
-            accountNumber,
-            amount,
-            description
-        });
+        const proxyUrl = `/api/qr-proxy?url=${encodeURIComponent(realUrl)}`;
+        const response = await fetch(proxyUrl);
+        if (response.ok) {
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
 
-        const response = await fetch(`/api/generate-qr?${params}`);
-        const data = await response.json();
-
-        if (data.success) {
-            // Tạo bill QR đẹp mắt
-            await createQRBill(data.qrCode, bankCode, accountNumber, amount, description);
-            
-            // Cập nhật thông tin hiển thị
-            document.getElementById('qrImage').src = data.qrCode;
-            const bankMeta = getSelectedBankMeta();
-            const bankName = BANK_NAMES[bankCode] || bankMeta.bankDisplay || bankCode;
-            document.getElementById('displayBank').textContent = bankName;
-            document.getElementById('displayAccount').textContent = accountNumber;
-            document.getElementById('displayAmount').textContent = parseInt(amount).toLocaleString('vi-VN');
-            document.getElementById('displayDescription').textContent = description || '(Không có)';
-
-            lastQrPayload = {
-                accountNumber,
-                amount,
-                description,
-                bankBin: bankMeta.bankBin,
-                bankCode: bankMeta.bankCode,
-                bankShortName: bankMeta.bankShortName
-            };
-
-            document.getElementById('qrResult').style.display = 'block';
-
-            // Scroll xuống kết quả
-            document.getElementById('qrResult').scrollIntoView({ behavior: 'smooth' });
-        } else {
-            alert('❌ Lỗi: ' + data.error);
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve(img);
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve(null);
+                };
+                img.src = objectUrl;
+            });
         }
     } catch (error) {
-        console.error('Error:', error);
-        alert('❌ Có lỗi xảy ra khi tạo mã QR!');
-    } finally {
-        submitBtn.textContent = originalText;
-        submitBtn.disabled = false;
+        /* Bỏ qua lỗi proxy và thử nạp trực tiếp */
     }
-});
 
-// Tải xuống QR code
-document.getElementById('downloadBtn').addEventListener('click', () => {
-    const canvas = document.getElementById('qrCanvas');
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = realUrl;
+    });
+}
+
+function truncateWithEllipsis(ctx, text, maxWidth) {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let truncated = text;
+    while (truncated.length > 1 && ctx.measureText(`${truncated}…`).width > maxWidth) {
+        truncated = truncated.slice(0, -1);
+    }
+    return `${truncated}…`;
+}
+
+function drawMonoText(ctx, text, x, y, { size, color, align = 'left', spacing = '3px' }) {
+    ctx.save();
+    try { ctx.letterSpacing = spacing; } catch (e) { /* bỏ qua nếu không hỗ trợ */ }
+    ctx.font = `500 ${size}px "IBM Plex Mono", Arial, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+}
+
+function drawCornerBrackets(ctx, x, y, width, height, length = 24, color = '#17171c', strokeWidth = 3) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = strokeWidth;
+    ctx.lineCap = 'round';
     
+    // Top-Left
+    ctx.beginPath();
+    ctx.moveTo(x, y + length);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + length, y);
+    ctx.stroke();
+
+    // Top-Right
+    ctx.beginPath();
+    ctx.moveTo(x + width - length, y);
+    ctx.lineTo(x + width, y);
+    ctx.lineTo(x + width, y + length);
+    ctx.stroke();
+
+    // Bottom-Left
+    ctx.beginPath();
+    ctx.moveTo(x, y + height - length);
+    ctx.lineTo(x, y + height);
+    ctx.lineTo(x + length, y + height);
+    ctx.stroke();
+
+    // Bottom-Right
+    ctx.beginPath();
+    ctx.moveTo(x + width - length, y + height);
+    ctx.lineTo(x + width, y + height);
+    ctx.lineTo(x + width, y + height - length);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+async function renderBillCanvas() {
+    await ensureBillFonts();
+
+    const acc = getActiveAccount();
+    const amount = parseMoney(amountInput.value);
+    const description = descriptionInput.value.trim();
+
+    const qrImage = await loadQrImageForBill(currentQrSrc);
+    const qrSide = 540;
+    const qrBoxPad = 32;
+    const qrBoxSide = qrSide + qrBoxPad * 2;
+
+    const rows = [
+        { label: 'NGÂN HÀNG', value: acc.shortName },
+        { label: 'CHỦ TÀI KHOẢN', value: acc.accountHolder },
+        { label: 'SỐ TÀI KHOẢN', value: acc.accountNumber, mono: true },
+        { label: 'SỐ TIỀN', value: formatDisplayAmount(amount) },
+        { label: 'NỘI DUNG', value: description || '—' }
+    ];
+
+    const rowH = 88;
+    const tableTop = 1140;
+    const tableH = rows.length * rowH + 20;
+    const billH = tableTop + tableH + 160;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = BILL_W;
+    canvas.height = billH;
+    const ctx = canvas.getContext('2d');
+
+    // Nền trang màu trắng
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, BILL_W, billH);
+
+    // Viền khung toàn bộ ảnh (Framed document look)
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(16, 16, BILL_W - 32, billH - 32);
+
+    // 1. Dải Header thương hiệu đen mờ
+    ctx.fillStyle = '#17171c';
+    ctx.fillRect(24, 24, BILL_W - 48, 88);
+
+    // Logo & tên thương hiệu
+    ctx.font = '700 30px "Space Grotesk", Arial, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText('Cevin', BILL_MARGIN, 78);
+    
+    const logoW = ctx.measureText('Cevin').width;
+    ctx.fillStyle = '#ff7759';
+    ctx.fillText('Pay', BILL_MARGIN + logoW, 78);
+
+    // Badge định danh bên phải header
+    drawMonoText(ctx, 'CHUYỂN KHOẢN VIETQR', BILL_W - BILL_MARGIN, 76, {
+        size: 18, color: 'rgba(255, 255, 255, 0.75)', align: 'right', spacing: '3px'
+    });
+
+    // 2. Eyebrow status & Tiêu đề số tiền
+    let y = 175;
+    
+    // Status Dot xanh nhấp nháy
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    ctx.arc(BILL_MARGIN + 6, y - 7, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawMonoText(ctx, 'SẴN SÀNG NHẬN', BILL_MARGIN + 24, y, {
+        size: 20, color: '#ff7759', spacing: '2px'
+    });
+
+    y += 98;
+    const headline = amount ? `${formatMoney(amount)} ₫` : 'Quét để chuyển khoản';
+    let headlineSize = 92;
+    ctx.font = `500 ${headlineSize}px "Space Grotesk", Arial, sans-serif`;
+    while (ctx.measureText(headline).width > BILL_W - BILL_MARGIN * 2 && headlineSize > 44) {
+        headlineSize -= 4;
+        ctx.font = `500 ${headlineSize}px "Space Grotesk", Arial, sans-serif`;
+    }
+    ctx.save();
+    try { ctx.letterSpacing = '-2px'; } catch (e) { /* bỏ qua */ }
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'left';
+    ctx.fillText(headline, BILL_MARGIN, y);
+    ctx.restore();
+
+    // Dòng thông tin phụ ngân hàng + chủ tk
+    y += 54;
+    ctx.font = '400 28px "Inter", Arial, sans-serif';
+    ctx.fillStyle = '#75758a';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${acc.fullName} · ${acc.accountHolder}`, BILL_MARGIN, y);
+
+    // 3. Khung mã QR nổi bật với góc định vị Tech Corner Brackets
+    const boxX = (BILL_W - qrBoxSide) / 2;
+    const boxY = y + 50;
+
+    // Nền xám nhạt cho khung QR
+    ctx.fillStyle = '#f8f9fa';
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, qrBoxSide, qrBoxSide, 20);
+    ctx.fill();
+
+    ctx.strokeStyle = '#e2e4e8';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, qrBoxSide, qrBoxSide, 20);
+    ctx.stroke();
+
+    // Vẽ 4 góc định vị công nghệ
+    drawCornerBrackets(ctx, boxX - 8, boxY - 8, qrBoxSide + 16, qrBoxSide + 16, 28, '#17171c', 3);
+
+    // Vẽ ảnh QR
+    if (qrImage) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(qrImage, boxX + qrBoxPad, boxY + qrBoxPad, qrSide, qrSide);
+    } else {
+        ctx.font = '400 26px "IBM Plex Mono", Arial, sans-serif';
+        ctx.fillStyle = '#93939f';
+        ctx.textAlign = 'center';
+        ctx.fillText('Không tải được mã QR', BILL_W / 2, boxY + qrBoxSide / 2);
+    }
+
+    // Nhãn hướng dẫn dưới QR
+    drawMonoText(ctx, '[ SỬ DỤNG ỨNG DỤNG NGÂN HÀNG ĐỂ QUÉT ]', BILL_W / 2, boxY + qrBoxSide + 38, {
+        size: 17, color: '#93939f', align: 'center', spacing: '2px'
+    });
+
+    // 4. Bảng thông tin giao dịch trong card bo tròn
+    const tableX = BILL_MARGIN;
+    const tableW = BILL_W - BILL_MARGIN * 2;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.roundRect(tableX, tableTop, tableW, tableH, 16);
+    ctx.fill();
+
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(tableX, tableTop, tableW, tableH, 16);
+    ctx.stroke();
+
+    rows.forEach((row, index) => {
+        const rowY = tableTop + 10 + index * rowH;
+        
+        if (index > 0) {
+            ctx.strokeStyle = '#f2f2f5';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(tableX + 24, rowY);
+            ctx.lineTo(tableX + tableW - 24, rowY);
+            ctx.stroke();
+        }
+
+        const baseline = rowY + 54;
+        drawMonoText(ctx, row.label, tableX + 24, baseline, { size: 20, color: '#75758a', spacing: '2px' });
+
+        ctx.font = row.mono
+            ? '500 28px "IBM Plex Mono", Arial, sans-serif'
+            : '500 30px "Inter", Arial, sans-serif';
+        ctx.fillStyle = (row.label === 'SỐ TIỀN' && amount) ? '#ff7759' : '#17171c';
+        ctx.textAlign = 'right';
+        const value = row.mono ? row.value : truncateWithEllipsis(ctx, row.value, tableW - 320);
+        ctx.fillText(value, tableX + tableW - 24, baseline);
+    });
+
+    // 5. Đường gạch đứt chân trang & Mã xác thực
+    const footerY = billH - 70;
+    
+    ctx.save();
+    ctx.strokeStyle = '#d9d9dd';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(BILL_MARGIN, footerY - 30);
+    ctx.lineTo(BILL_W - BILL_MARGIN, footerY - 30);
+    ctx.stroke();
+    ctx.restore();
+
+    drawMonoText(ctx, 'XÁC THỰC BỞI VIETQR.IO · NAPAS 247', BILL_MARGIN, footerY + 6, {
+        size: 18, color: '#93939f', align: 'left', spacing: '2px'
+    });
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    drawMonoText(ctx, `CEVINPAY SECURITY · ${timestamp}`, BILL_W - BILL_MARGIN, footerY + 6, {
+        size: 18, color: '#93939f', align: 'right', spacing: '2px'
+    });
+
+    return canvas;
+}
+
+downloadBtn.addEventListener('click', async () => {
+    downloadBtn.disabled = true;
     try {
-        // Convert canvas to blob
-        canvas.toBlob((blob) => {
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.download = `CevinPay-QR-${Date.now()}.png`;
-            link.href = url;
-            link.click();
-            
-            // Cleanup
-            window.URL.revokeObjectURL(url);
-        }, 'image/png');
+        const canvas = await renderBillCanvas();
+        const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob thất bại'))), 'image/png');
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = `cevinpay-qr-techcombank-${Date.now()}.png`;
+        link.href = url;
+        link.click();
+        URL.revokeObjectURL(url);
     } catch (error) {
         console.error('Download error:', error);
-        alert('❌ Lỗi khi tải xuống. Vui lòng thử lại!');
+        setStatus('error', 'Lỗi tải ảnh');
+    } finally {
+        downloadBtn.disabled = false;
     }
 });
 
-// Tạo và sao chép deeplink
-document.getElementById('deeplinkBtn').addEventListener('click', async () => {
-    if (!lastQrPayload) {
-        alert('⚠️ Vui lòng tạo mã QR trước khi lấy deeplink!');
-        return;
-    }
+/* ============ Khác ============ */
 
-    const deeplink = buildVietQrDeeplink(lastQrPayload);
-    if (!deeplink) {
-        alert('❌ Không tạo được deeplink. Vui lòng kiểm tra ngân hàng và số tài khoản.');
-        return;
-    }
+if (barClose && announcementBar) {
+    barClose.addEventListener('click', () => {
+        announcementBar.classList.add('is-hidden');
+    });
+}
 
-    const copied = await copyToClipboard(deeplink);
-    if (copied) {
-        alert('✅ Đã sao chép deeplink!');
-    } else {
-        alert('❌ Không thể sao chép deeplink. Vui lòng thử lại.');
-    }
+document.getElementById('bankLogo').addEventListener('error', function () {
+    this.style.display = 'none';
 });
+
+/* ============ Chuyển Tab Ngân Hàng ============ */
+
+const bankTabBtns = document.querySelectorAll('.tab-btn');
+const bankLogo = document.getElementById('bankLogo');
+const bankNameSpan = document.getElementById('bankNameSpan');
+const accountHolder = document.getElementById('accountHolder');
+
+function switchBankTab(bankKey) {
+    if (!ACCOUNTS[bankKey] || bankKey === currentBankKey) return;
+    currentBankKey = bankKey;
+
+    bankTabBtns.forEach(btn => {
+        const isMatch = btn.dataset.bank === bankKey;
+        btn.classList.toggle('is-active', isMatch);
+        btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+
+    const acc = getActiveAccount();
+    if (bankLogo) bankLogo.src = acc.logoUrl;
+    if (bankNameSpan) bankNameSpan.textContent = acc.shortName;
+    if (accountValue) accountValue.textContent = acc.accountNumber;
+    if (accountHolder) accountHolder.textContent = acc.accountHolder;
+
+    refreshQr();
+}
+
+bankTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        switchBankTab(btn.dataset.bank);
+    });
+});
+
+/* ============ Khởi tạo ============ */
+
+function initApp() {
+    const acc = getActiveAccount();
+    if (bankLogo) bankLogo.src = acc.logoUrl;
+    if (bankNameSpan) bankNameSpan.textContent = acc.shortName;
+    if (accountValue) accountValue.textContent = acc.accountNumber;
+    if (accountHolder) accountHolder.textContent = acc.accountHolder;
+    updateDetailRows('', '');
+    const initialQrUrl = buildDirectQrUrl('');
+    currentQrSrc = initialQrUrl;
+    qrImg.src = initialQrUrl;
+}
+
+initApp();

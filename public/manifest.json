@@ -1,11 +1,11 @@
 {
   "name": "CevinPay - QR Banking",
   "short_name": "CevinPay",
-  "description": "Tạo mã QR chuyển khoản nhanh chóng, số tiền cố định",
+  "description": "Tạo mã VietQR nhận chuyển khoản cho tài khoản Techcombank, cập nhật tức thì",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f2027",
-  "theme_color": "#0066FF",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "orientation": "portrait",
   "icons": [
     {
