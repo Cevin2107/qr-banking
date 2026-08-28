@@ -119,7 +119,7 @@ function applyQr(src) {
     currentQrSrc = src;
     if (qrImg.getAttribute('src') === src) {
         qrFrame.classList.remove('is-refreshing');
-        setStatus('ready', 'Sẵn sàng nhận');
+        setStatus('ready', 'Chờ thanh toán');
         return;
     }
     qrImg.src = src;
@@ -127,7 +127,7 @@ function applyQr(src) {
 
 qrImg.addEventListener('load', () => {
     qrFrame.classList.remove('is-refreshing');
-    setStatus('ready', 'Sẵn sàng nhận');
+    setStatus('ready', 'Chờ thanh toán');
 });
 
 qrImg.addEventListener('error', () => {
@@ -451,170 +451,188 @@ async function renderBillCanvas() {
         { label: 'NỘI DUNG', value: description || '—' }
     ];
 
-    const rowH = 88;
-    const tableTop = 1050;
+    // Tính toán bố cục động
+    let y = 175; // Khởi đầu sau header
+    y += 92; // Tiêu đề
+    y += 48; // Dòng phụ
+    const boxY = y + 50;
+    const tableTop = boxY + qrBoxSide + 90;
+    const rowH = 80;
     const tableH = rows.length * rowH + 20;
-    const billH = tableTop + tableH + 140;
+    const billH = tableTop + tableH + 110;
 
     const canvas = document.createElement('canvas');
     canvas.width = BILL_W;
     canvas.height = billH;
     const ctx = canvas.getContext('2d');
 
-    // Nền trang màu trắng toàn bộ ảnh
-    ctx.fillStyle = '#ffffff';
+    // Nền trang màu xám siêu nhạt (hiện đại, trẻ trung)
+    ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, BILL_W, billH);
 
-    // 1. Dải Header thương hiệu đen tràn viền (Full Width Top Header)
-    const headerH = 100;
-    ctx.fillStyle = '#17171c';
+    // 1. Dải Header thương hiệu đen Gradient tràn viền
+    const headerH = 120;
+    const headerGradient = ctx.createLinearGradient(0, 0, BILL_W, 0);
+    headerGradient.addColorStop(0, '#0f172a');
+    headerGradient.addColorStop(1, '#1e293b');
+    ctx.fillStyle = headerGradient;
     ctx.fillRect(0, 0, BILL_W, headerH);
 
     // Logo & tên thương hiệu
-    ctx.font = '700 32px "Space Grotesk", Arial, sans-serif';
+    ctx.font = '700 36px "Space Grotesk", Arial, sans-serif';
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'left';
-    ctx.fillText('Cevin', BILL_MARGIN, 62);
+    ctx.fillText('Cevin', BILL_MARGIN, 76);
     
     const logoW = ctx.measureText('Cevin').width;
-    ctx.fillStyle = '#ff7759';
-    ctx.fillText('Pay', BILL_MARGIN + logoW, 62);
+    ctx.fillStyle = '#ff7759'; // Giữ chút màu nhấn thương hiệu
+    ctx.fillText('Pay', BILL_MARGIN + logoW, 76);
 
     // Badge định danh bên phải header
-    drawMonoText(ctx, 'CHUYỂN KHOẢN VIETQR', BILL_W - BILL_MARGIN, 60, {
-        size: 18, color: 'rgba(255, 255, 255, 0.75)', align: 'right', spacing: '3px'
+    drawMonoText(ctx, 'CHUYỂN KHOẢN VIETQR', BILL_W - BILL_MARGIN, 72, {
+        size: 18, color: 'rgba(255, 255, 255, 0.7)', align: 'right', spacing: '2px'
     });
 
-    // 2. Eyebrow status & Tiêu đề số tiền
-    let y = 165;
+    // Khôi phục y về ban đầu để vẽ tiếp
+    y = 175;
     
-    // Status Dot xanh
+    // Status Pill (hiện đại hơn dạng chấm tròn cũ)
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.1)';
+    ctx.beginPath();
+    ctx.roundRect(BILL_MARGIN, y - 24, 210, 40, 20);
+    ctx.fill();
+    
     ctx.fillStyle = '#10b981';
     ctx.beginPath();
-    ctx.arc(BILL_MARGIN + 6, y - 7, 7, 0, Math.PI * 2);
+    ctx.arc(BILL_MARGIN + 20, y - 4, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    drawMonoText(ctx, 'SẴN SÀNG NHẬN', BILL_MARGIN + 24, y, {
-        size: 20, color: '#ff7759', spacing: '2px'
+    drawMonoText(ctx, 'CHỜ THANH TOÁN', BILL_MARGIN + 36, y + 1, {
+        size: 16, color: '#059669', spacing: '1px'
     });
 
     y += 92;
     const headline = amount ? `${formatMoney(amount)} ₫` : 'Quét để chuyển khoản';
-    let headlineSize = 92;
-    ctx.font = `500 ${headlineSize}px "Space Grotesk", Arial, sans-serif`;
-    while (ctx.measureText(headline).width > BILL_W - BILL_MARGIN * 2 && headlineSize > 44) {
+    let headlineSize = 88;
+    ctx.font = `700 ${headlineSize}px "Space Grotesk", Arial, sans-serif`;
+    while (ctx.measureText(headline).width > BILL_W - BILL_MARGIN * 2 && headlineSize > 40) {
         headlineSize -= 4;
-        ctx.font = `500 ${headlineSize}px "Space Grotesk", Arial, sans-serif`;
+        ctx.font = `700 ${headlineSize}px "Space Grotesk", Arial, sans-serif`;
     }
     ctx.save();
     try { ctx.letterSpacing = '-2px'; } catch (e) { /* bỏ qua */ }
-    ctx.fillStyle = '#000000';
+    ctx.fillStyle = '#0f172a'; // Tối sang trọng
     ctx.textAlign = 'left';
     ctx.fillText(headline, BILL_MARGIN, y);
     ctx.restore();
 
     // Dòng thông tin phụ ngân hàng + chủ tk
-    y += 50;
-    ctx.font = '400 28px "Inter", Arial, sans-serif';
-    ctx.fillStyle = '#75758a';
+    y += 48;
+    ctx.font = '500 26px "Inter", Arial, sans-serif';
+    ctx.fillStyle = '#64748b';
     ctx.textAlign = 'left';
     ctx.fillText(`${acc.fullName} · ${acc.accountHolder}`, BILL_MARGIN, y);
 
-    // 3. Khung mã QR nổi bật với góc định vị Tech Corner Brackets
+    // 3. Khung mã QR hiện đại (Soft shadow glass effect)
     const boxX = (BILL_W - qrBoxSide) / 2;
-    const boxY = y + 50;
 
-    // Nền xám nhạt cho khung QR
-    ctx.fillStyle = '#f8f9fa';
+    ctx.save();
+    ctx.shadowColor = 'rgba(15, 23, 42, 0.08)';
+    ctx.shadowBlur = 40;
+    ctx.shadowOffsetY = 20;
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.roundRect(boxX, boxY, qrBoxSide, qrBoxSide, 20);
+    ctx.roundRect(boxX, boxY, qrBoxSide, qrBoxSide, 32);
     ctx.fill();
-
-    ctx.strokeStyle = '#e2e4e8';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.roundRect(boxX, boxY, qrBoxSide, qrBoxSide, 20);
-    ctx.stroke();
-
-    // Vẽ 4 góc định vị công nghệ
-    drawCornerBrackets(ctx, boxX - 8, boxY - 8, qrBoxSide + 16, qrBoxSide + 16, 28, '#17171c', 3);
+    ctx.restore();
 
     // Vẽ ảnh QR
     if (qrImage) {
-        ctx.imageSmoothingEnabled = false;
+        ctx.imageSmoothingEnabled = true;
         ctx.drawImage(qrImage, boxX + qrBoxPad, boxY + qrBoxPad, qrSide, qrSide);
     } else {
-        ctx.font = '400 26px "IBM Plex Mono", Arial, sans-serif';
-        ctx.fillStyle = '#93939f';
+        ctx.font = '400 26px "Inter", Arial, sans-serif';
+        ctx.fillStyle = '#94a3b8';
         ctx.textAlign = 'center';
         ctx.fillText('Không tải được mã QR', BILL_W / 2, boxY + qrBoxSide / 2);
     }
 
     // Nhãn hướng dẫn dưới QR
-    drawMonoText(ctx, '[ SỬ DỤNG ỨNG DỤNG NGÂN HÀNG ĐỂ QUÉT ]', BILL_W / 2, boxY + qrBoxSide + 38, {
-        size: 17, color: '#93939f', align: 'center', spacing: '2px'
+    drawMonoText(ctx, 'SỬ DỤNG ỨNG DỤNG NGÂN HÀNG ĐỂ QUÉT', BILL_W / 2, boxY + qrBoxSide + 40, {
+        size: 16, color: '#64748b', align: 'center', spacing: '2px'
     });
 
-    // 4. Bảng thông tin giao dịch trong card bo tròn
+    // 4. Bảng thông tin giao dịch bo góc tinh tế
     const tableX = BILL_MARGIN;
     const tableW = BILL_W - BILL_MARGIN * 2;
 
+    ctx.save();
+    ctx.shadowColor = 'rgba(15, 23, 42, 0.04)';
+    ctx.shadowBlur = 30;
+    ctx.shadowOffsetY = 15;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.roundRect(tableX, tableTop, tableW, tableH, 16);
+    ctx.roundRect(tableX, tableTop, tableW, tableH, 24);
     ctx.fill();
-
-    ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(tableX, tableTop, tableW, tableH, 16);
-    ctx.stroke();
+    ctx.restore();
 
     rows.forEach((row, index) => {
         const rowY = tableTop + 10 + index * rowH;
         
         if (index > 0) {
-            ctx.strokeStyle = '#f2f2f5';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#f1f5f9';
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.moveTo(tableX + 24, rowY);
-            ctx.lineTo(tableX + tableW - 24, rowY);
+            ctx.moveTo(tableX + 32, rowY);
+            ctx.lineTo(tableX + tableW - 32, rowY);
             ctx.stroke();
         }
 
         const baseline = rowY + 54;
-        drawMonoText(ctx, row.label, tableX + 24, baseline, { size: 20, color: '#75758a', spacing: '2px' });
+        ctx.font = '500 20px "Inter", Arial, sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'left';
+        ctx.fillText(row.label, tableX + 32, baseline);
 
         ctx.font = row.mono
-            ? '500 28px "IBM Plex Mono", Arial, sans-serif'
-            : '500 30px "Inter", Arial, sans-serif';
-        ctx.fillStyle = (row.label === 'SỐ TIỀN' && amount) ? '#ff7759' : '#17171c';
+            ? '500 26px "IBM Plex Mono", Arial, sans-serif'
+            : '600 26px "Inter", Arial, sans-serif';
+        ctx.fillStyle = (row.label === 'SỐ TIỀN' && amount) ? '#ff7759' : '#1e293b';
         ctx.textAlign = 'right';
-        const value = row.mono ? row.value : truncateWithEllipsis(ctx, row.value, tableW - 320);
-        ctx.fillText(value, tableX + tableW - 24, baseline);
+        const value = row.mono ? row.value : truncateWithEllipsis(ctx, row.value, tableW - 300);
+        ctx.fillText(value, tableX + tableW - 32, baseline);
     });
 
-    // 5. Đường gạch đứt chân trang & Mã xác thực
-    const footerY = billH - 70;
+    // 5. Chân trang tối giản hiện đại - Nổi bật Đào Bá Anh Quân
+    const footerY = billH - 45;
     
+    const prefixText = 'HỆ THỐNG ĐƯỢC PHÁT TRIỂN BỞI ';
+    const nameText = 'ĐÀO BÁ ANH QUÂN';
+
     ctx.save();
-    ctx.strokeStyle = '#d9d9dd';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 6]);
-    ctx.beginPath();
-    ctx.moveTo(BILL_MARGIN, footerY - 30);
-    ctx.lineTo(BILL_W - BILL_MARGIN, footerY - 30);
-    ctx.stroke();
+    try { ctx.letterSpacing = '1px'; } catch (e) {}
+    
+    ctx.font = '500 16px "Space Grotesk", Arial, sans-serif';
+    const prefixW = ctx.measureText(prefixText).width;
+
+    ctx.font = '700 17px "Space Grotesk", Arial, sans-serif';
+    const nameW = ctx.measureText(nameText).width;
+
+    const totalW = prefixW + nameW;
+    const startX = (BILL_W - totalW) / 2;
+
+    // Vẽ phần prefix xám nhạt
+    ctx.font = '500 16px "Space Grotesk", Arial, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'left';
+    ctx.fillText(prefixText, startX, footerY);
+
+    // Vẽ tên nổi bật Bold + Màu đen tối sang trọng
+    ctx.font = '700 17px "Space Grotesk", Arial, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(nameText, startX + prefixW, footerY);
+    
     ctx.restore();
-
-    drawMonoText(ctx, 'XÁC THỰC BỞI VIETQR.IO · NAPAS 247', BILL_MARGIN, footerY + 6, {
-        size: 18, color: '#93939f', align: 'left', spacing: '2px'
-    });
-
-    const timestamp = new Date().toISOString().slice(0, 10);
-    drawMonoText(ctx, `CEVINPAY SECURITY · ${timestamp}`, BILL_W - BILL_MARGIN, footerY + 6, {
-        size: 18, color: '#93939f', align: 'right', spacing: '2px'
-    });
 
     return canvas;
 }
