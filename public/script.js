@@ -234,34 +234,68 @@ if (shareBtn) {
             });
 
             const fileName = `cevinpay-qr-${Date.now()}.png`;
-            const file = new File([blob], fileName, { type: 'image/png' });
+            const file = new File([blob], fileName, { type: 'image/png', lastModified: Date.now() });
 
+            let isShared = false;
+
+            // 1. Thử chia sẻ qua Web Share API (native share sheet)
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({
-                    title: 'Mã QR CevinPay',
-                    text: 'Mã QR nhận chuyển khoản VietQR',
-                    files: [file]
-                });
-                flashButton(shareBtn, 'Đã chia sẻ ✓');
-            } else if (navigator.clipboard && window.ClipboardItem) {
-                await navigator.clipboard.write([
-                    new ClipboardItem({ 'image/png': blob })
-                ]);
-                flashButton(shareBtn, 'Đã copy ảnh ✓');
-            } else {
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.download = fileName;
-                link.href = url;
-                link.click();
-                URL.revokeObjectURL(url);
-                flashButton(shareBtn, 'Đã tải ảnh ✓');
+                try {
+                    // Thử với đầy đủ title, text và files
+                    await navigator.share({
+                        title: 'Mã QR CevinPay',
+                        text: 'Mã QR nhận chuyển khoản VietQR',
+                        files: [file]
+                    });
+                    isShared = true;
+                    flashButton(shareBtn, 'Đã chia sẻ ✓');
+                } catch (shareErr) {
+                    if (shareErr.name === 'AbortError') {
+                        // Người dùng chủ động hủy chia sẻ
+                        return;
+                    }
+                    // Thử lại chỉ với files (một số môi trường PWA/iOS không chấp nhận kết hợp text + files)
+                    try {
+                        await navigator.share({ files: [file] });
+                        isShared = true;
+                        flashButton(shareBtn, 'Đã chia sẻ ✓');
+                    } catch (shareErr2) {
+                        if (shareErr2.name === 'AbortError') return;
+                        console.warn('Web Share failed in PWA mode, using fallback:', shareErr2);
+                    }
+                }
+            }
+
+            // 2. Dự phòng: Thử copy vào Clipboard hoặc Tải ảnh về
+            if (!isShared) {
+                let isCopied = false;
+                if (navigator.clipboard && window.ClipboardItem) {
+                    try {
+                        await navigator.clipboard.write([
+                            new ClipboardItem({ [blob.type]: blob })
+                        ]);
+                        isCopied = true;
+                        flashButton(shareBtn, 'Đã copy ảnh ✓');
+                    } catch (clipErr) {
+                        console.warn('Clipboard copy failed:', clipErr);
+                    }
+                }
+
+                if (!isCopied) {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = fileName;
+                    link.href = url;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    flashButton(shareBtn, 'Đã tải ảnh ✓');
+                }
             }
         } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.error('Share error:', error);
-                flashButton(shareBtn, 'Lỗi chia sẻ');
-            }
+            console.error('Share process error:', error);
+            flashButton(shareBtn, 'Lỗi chia sẻ');
         } finally {
             shareBtn.disabled = false;
         }
@@ -287,6 +321,21 @@ async function ensureBillFonts() {
 
 async function loadQrImageForBill(src) {
     if (!src) return null;
+
+    // Fast-path: Nếu ảnh trên DOM đã nạp xong và không bị dính lỗi CORS, dùng trực tiếp để tránh delay network
+    if (qrImg && qrImg.complete && qrImg.naturalWidth > 0) {
+        try {
+            const testCanvas = document.createElement('canvas');
+            testCanvas.width = 1;
+            testCanvas.height = 1;
+            const testCtx = testCanvas.getContext('2d');
+            testCtx.drawImage(qrImg, 0, 0, 1, 1);
+            testCanvas.toDataURL();
+            return qrImg;
+        } catch (e) {
+            /* Ảnh bị CORS canvas taint, chuyển sang proxy */
+        }
+    }
     
     let realUrl = src;
     if (realUrl.includes('/api/qr-proxy?url=')) {
@@ -583,10 +632,13 @@ downloadBtn.addEventListener('click', async () => {
         });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.download = `cevinpay-qr-techcombank-${Date.now()}.png`;
+        const acc = getActiveAccount();
+        link.download = `cevinpay-qr-${acc.code.toLowerCase()}-${Date.now()}.png`;
         link.href = url;
+        document.body.appendChild(link);
         link.click();
-        URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
         console.error('Download error:', error);
         setStatus('error', 'Lỗi tải ảnh');
@@ -642,6 +694,7 @@ bankTabBtns.forEach(btn => {
 /* ============ Khởi tạo ============ */
 
 function initApp() {
+    ensureBillFonts();
     const acc = getActiveAccount();
     if (bankLogo) bankLogo.src = acc.logoUrl;
     if (bankNameSpan) bankNameSpan.textContent = acc.shortName;
