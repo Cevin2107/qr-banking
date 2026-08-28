@@ -452,47 +452,43 @@ async function renderBillCanvas() {
     ];
 
     const rowH = 88;
-    const tableTop = 1140;
+    const tableTop = 1050;
     const tableH = rows.length * rowH + 20;
-    const billH = tableTop + tableH + 160;
+    const billH = tableTop + tableH + 140;
 
     const canvas = document.createElement('canvas');
     canvas.width = BILL_W;
     canvas.height = billH;
     const ctx = canvas.getContext('2d');
 
-    // Nền trang màu trắng
+    // Nền trang màu trắng toàn bộ ảnh
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, BILL_W, billH);
 
-    // Viền khung toàn bộ ảnh (Framed document look)
-    ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(16, 16, BILL_W - 32, billH - 32);
-
-    // 1. Dải Header thương hiệu đen mờ
+    // 1. Dải Header thương hiệu đen tràn viền (Full Width Top Header)
+    const headerH = 100;
     ctx.fillStyle = '#17171c';
-    ctx.fillRect(24, 24, BILL_W - 48, 88);
+    ctx.fillRect(0, 0, BILL_W, headerH);
 
     // Logo & tên thương hiệu
-    ctx.font = '700 30px "Space Grotesk", Arial, sans-serif';
+    ctx.font = '700 32px "Space Grotesk", Arial, sans-serif';
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'left';
-    ctx.fillText('Cevin', BILL_MARGIN, 78);
+    ctx.fillText('Cevin', BILL_MARGIN, 62);
     
     const logoW = ctx.measureText('Cevin').width;
     ctx.fillStyle = '#ff7759';
-    ctx.fillText('Pay', BILL_MARGIN + logoW, 78);
+    ctx.fillText('Pay', BILL_MARGIN + logoW, 62);
 
     // Badge định danh bên phải header
-    drawMonoText(ctx, 'CHUYỂN KHOẢN VIETQR', BILL_W - BILL_MARGIN, 76, {
+    drawMonoText(ctx, 'CHUYỂN KHOẢN VIETQR', BILL_W - BILL_MARGIN, 60, {
         size: 18, color: 'rgba(255, 255, 255, 0.75)', align: 'right', spacing: '3px'
     });
 
     // 2. Eyebrow status & Tiêu đề số tiền
-    let y = 175;
+    let y = 165;
     
-    // Status Dot xanh nhấp nháy
+    // Status Dot xanh
     ctx.fillStyle = '#10b981';
     ctx.beginPath();
     ctx.arc(BILL_MARGIN + 6, y - 7, 7, 0, Math.PI * 2);
@@ -502,7 +498,7 @@ async function renderBillCanvas() {
         size: 20, color: '#ff7759', spacing: '2px'
     });
 
-    y += 98;
+    y += 92;
     const headline = amount ? `${formatMoney(amount)} ₫` : 'Quét để chuyển khoản';
     let headlineSize = 92;
     ctx.font = `500 ${headlineSize}px "Space Grotesk", Arial, sans-serif`;
@@ -518,7 +514,7 @@ async function renderBillCanvas() {
     ctx.restore();
 
     // Dòng thông tin phụ ngân hàng + chủ tk
-    y += 54;
+    y += 50;
     ctx.font = '400 28px "Inter", Arial, sans-serif';
     ctx.fillStyle = '#75758a';
     ctx.textAlign = 'left';

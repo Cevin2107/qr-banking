@@ -1,5 +1,5 @@
 // Service Worker cho PWA
-const CACHE_NAME = 'cevinpay-v3';
+const CACHE_NAME = 'cevinpay-v4';
 const urlsToCache = [
   '/',
   '/index.html',
