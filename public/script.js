@@ -41,7 +41,7 @@ const displayDescription = document.getElementById('displayDescription');
 const accountValue = document.getElementById('accountValue');
 const downloadBtn = document.getElementById('downloadBtn');
 const copyAccountBtn = document.getElementById('copyAccountBtn');
-const deeplinkBtn = document.getElementById('deeplinkBtn');
+const shareBtn = document.getElementById('shareBtn');
 const barClose = document.getElementById('barClose');
 const announcementBar = document.getElementById('announcementBar');
 
@@ -224,26 +224,49 @@ copyAccountBtn.addEventListener('click', async () => {
     }
 });
 
-function buildVietQrDeeplink(amount, description) {
-    const acc = getActiveAccount();
-    const app = acc.code.toLowerCase();
-    const params = new URLSearchParams({
-        app,
-        ba: `${acc.accountNumber}@${app}`
-    });
-    if (amount) params.set('am', amount);
-    if (description) params.set('tn', description);
-    return `https://dl.vietqr.io/pay?${params.toString()}`;
-}
+if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+        shareBtn.disabled = true;
+        try {
+            const canvas = await renderBillCanvas();
+            const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Tạo ảnh thất bại'))), 'image/png');
+            });
 
-deeplinkBtn.addEventListener('click', async () => {
-    const amount = parseMoney(amountInput.value);
-    const description = descriptionInput.value.trim();
-    const deeplink = buildVietQrDeeplink(amount, description);
-    if (await copyToClipboard(deeplink)) {
-        flashButton(deeplinkBtn, 'Đã sao chép ✓');
-    }
-});
+            const fileName = `cevinpay-qr-${Date.now()}.png`;
+            const file = new File([blob], fileName, { type: 'image/png' });
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                    title: 'Mã QR CevinPay',
+                    text: 'Mã QR nhận chuyển khoản VietQR',
+                    files: [file]
+                });
+                flashButton(shareBtn, 'Đã chia sẻ ✓');
+            } else if (navigator.clipboard && window.ClipboardItem) {
+                await navigator.clipboard.write([
+                    new ClipboardItem({ 'image/png': blob })
+                ]);
+                flashButton(shareBtn, 'Đã copy ảnh ✓');
+            } else {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.download = fileName;
+                link.href = url;
+                link.click();
+                URL.revokeObjectURL(url);
+                flashButton(shareBtn, 'Đã tải ảnh ✓');
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error('Share error:', error);
+                flashButton(shareBtn, 'Lỗi chia sẻ');
+            }
+        } finally {
+            shareBtn.disabled = false;
+        }
+    });
+}
 
 /* ============ Tải bill PNG — phong cách editorial trắng/đen ============ */
 
