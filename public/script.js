@@ -942,13 +942,16 @@ function updateNotifButtonState() {
     }
 
     if (Notification.permission === 'granted') {
-        enableNotifBtn.textContent = '🔔 Đã bật thông báo hệ thống ✓';
-        enableNotifBtn.classList.add('is-granted');
+        // Người dùng đã bật thông báo hệ thống -> Tự động ẩn nút
+        enableNotifBtn.style.display = 'none';
     } else if (Notification.permission === 'denied') {
+        enableNotifBtn.style.display = 'inline-flex';
         enableNotifBtn.textContent = '🔕 Thông báo bị chặn';
         enableNotifBtn.disabled = true;
     } else {
+        enableNotifBtn.style.display = 'inline-flex';
         enableNotifBtn.textContent = '🔔 Bật thông báo hệ thống';
+        enableNotifBtn.disabled = false;
         enableNotifBtn.classList.remove('is-granted');
     }
 }
