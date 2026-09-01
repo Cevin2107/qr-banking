@@ -32,8 +32,9 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Kết nối Kênh Cloud SSE ngầm để hiển thị thông báo đẩy kể cả khi đã đóng tab hoặc khóa màn hình
+// Kết nối Kênh Cloud SSE ngầm làm Single Source of Truth cho Thông báo đẩy hệ thống
 let bgEventSource = null;
+const processedSwTxIds = new Set();
 
 function initBackgroundPush() {
   if (bgEventSource) return;
@@ -45,27 +46,23 @@ function initBackgroundPush() {
         if (payload && payload.message) {
           const tx = JSON.parse(payload.message);
           if (tx && tx.transferAmount && tx.id) {
-            // Kiểm tra xem có tab PWA nào đang mở và được thắp sáng ở màn hình chính hay không
-            clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-              const hasFocusedTab = clientList.some(c => c.visibilityState === 'visible' && c.focused);
-              
-              // Nếu tab đang mở ở màn hình chính, script.js đã xử lý rồi -> SW bỏ qua để tránh trùng lặp 2 thông báo!
-              if (!hasFocusedTab) {
-                const amountStr = String(tx.transferAmount).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-                const title = `+${amountStr} ₫ · TPBank 🟢`;
-                const sender = tx.content || tx.description || 'Khách hàng';
+            const strId = String(tx.id);
+            if (processedSwTxIds.has(strId)) return;
+            processedSwTxIds.add(strId);
 
-                self.registration.showNotification(title, {
-                  body: `Từ / ND: ${sender}`,
-                  icon: '/image-192.png',
-                  badge: '/image-192.png',
-                  tag: `tpbank-tx-${tx.id}`,
-                  vibrate: [200, 100, 200, 100, 200],
-                  renotify: true,
-                  silent: false,
-                  data: { url: '/' }
-                });
-              }
+            const amountStr = String(tx.transferAmount).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+            const title = `+${amountStr} ₫ · TPBank 🟢`;
+            const sender = tx.content || tx.description || 'Khách hàng';
+
+            self.registration.showNotification(title, {
+              body: `Từ / ND: ${sender}`,
+              icon: '/image-192.png',
+              badge: '/image-192.png',
+              tag: `tpbank-tx-${strId}`,
+              vibrate: [200, 100, 200, 100, 200],
+              renotify: true,
+              silent: false,
+              data: { url: '/' }
             });
           }
         }

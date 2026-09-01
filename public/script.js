@@ -1012,13 +1012,6 @@ function handleIncomingTpBankPayment(tx, isInitial = false) {
     // Không nổ Toast hay phát âm thanh nếu đây là lần nạp dữ liệu ban đầu khi mới mở trang
     if (isInitial || !isInitialLoadComplete) return;
 
-    // Gửi thông báo đẩy hệ thống (OS Lockscreen / Desktop Notification)
-    sendSystemNotification({
-        title: `+${formatMoney(tx.transferAmount)} ₫ · TPBank 🟢`,
-        body: `Từ: ${parseSenderInfo(tx)} | ND: ${tx.content || '—'}`,
-        tag: `tpbank-tx-${tx.id}`
-    });
-
     // Bật thông báo Toast nhận tiền TPBank
     const currentAmount = parseMoney(amountInput.value);
 
