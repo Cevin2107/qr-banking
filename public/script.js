@@ -792,34 +792,47 @@ function showToast({ type = 'dynamic', badgeText, title, amount, sender, content
 
     const isMatched = type === 'matched';
     const iconSvg = isMatched 
-        ? `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`
-        : `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+        ? `<svg class="toast-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`
+        : `<svg class="toast-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
 
     toast.innerHTML = `
-        <div class="toast-glow"></div>
-        <button type="button" class="toast-close" aria-label="Đóng">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-        </button>
-        <div class="toast-content">
-            <div class="toast-header">
-                ${iconSvg}
-                <div class="toast-badge">${escapeHtml(badgeText || 'THÔNG BÁO GIAO DỊCH')}</div>
+        <div class="toast-liquid-shine"></div>
+        <div class="toast-header">
+            <div class="toast-header-left">
+                <span class="toast-status-icon">${iconSvg}</span>
+                <span class="toast-badge">${escapeHtml(badgeText || 'THÔNG BÁO GIAO DỊCH')}</span>
             </div>
-            <div class="toast-body">
-                <div class="toast-title">${escapeHtml(title)}</div>
-                <div class="toast-amount">+${formattedAmount} ₫</div>
-            </div>
-            <div class="toast-meta">
-                ${sender ? `<div class="meta-row"><span class="meta-label">Từ:</span> <span class="meta-value">${escapeHtml(sender)}</span></div>` : ''}
-                <div class="meta-row"><span class="meta-label">Nội dung:</span> <span class="meta-value">${escapeHtml(content || '—')}</span></div>
+            <button type="button" class="toast-close-btn" aria-label="Đóng">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+        
+        <div class="toast-body">
+            <div class="toast-amount">+${formattedAmount} <span class="currency">₫</span></div>
+            <div class="toast-title">${escapeHtml(title)}</div>
+        </div>
+
+        <div class="toast-meta-card">
+            ${sender ? `
+            <div class="meta-item">
+                <span class="meta-icon">👤</span>
+                <span class="meta-label">Người gửi:</span>
+                <span class="meta-value sender-highlight">${escapeHtml(sender)}</span>
+            </div>` : ''}
+            <div class="meta-item">
+                <span class="meta-icon">📝</span>
+                <span class="meta-label">Nội dung:</span>
+                <span class="meta-value">${escapeHtml(content || '—')}</span>
             </div>
         </div>
     `;
 
-    const closeBtn = toast.querySelector('.toast-close');
-    closeBtn.addEventListener('click', () => {
-        removeToast(toast);
-    });
+    const closeBtn = toast.querySelector('.toast-close-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            removeToast(toast);
+        });
+    }
 
     toastContainer.appendChild(toast);
     playSuccessChime();
@@ -841,27 +854,47 @@ function removeToast(toast) {
 
 function parseSenderInfo(tx) {
     if (!tx) return 'Khách hàng';
-    const content = (tx.content || '').trim();
+    let content = (tx.content || '').trim();
+    if (!content) {
+        return tx.referenceCode ? `Mã GD: ${tx.referenceCode}` : (tx.gateway || 'Khách hàng');
+    }
+
+    // Lược bỏ các tiền tố ngân hàng phổ biến ở đầu câu
+    const cleanContent = content.replace(/^(IBFT|MBVCB|VCB|TCB|TPB|VMB|BIDV|Agribank|Vietinbank|NAPAS|CT\s+TU\s+\d+|CT\s+TU|NHAN\s+TU|TU)\s+[:.-]?\s*/i, '').trim();
+
+    // 1. Tách tên đứng đầu câu trước các từ khóa "chuyen tien", "chuyen", "ck", "thanh toan", "FT...", v.v.
+    const stopRegex = /\s+(chuyen\s+tien|chuyen\s+khoan|chuyen|chuyển\s+tiền|chuyển|ck|thanh\s+toan|thanh\s+toán|tt|ft\d+|ref\d+|ma\s+gd|-\s+)/i;
+    const parts = cleanContent.split(stopRegex);
     
-    if (content) {
-        // Thử tách tên người gửi đứng trước các từ khóa chuyển tiền thường gặp (ví dụ "DAO BA ANH QUAN chuyen tien...")
-        const matchName = content.match(/^([A-Z\s]{3,35})\s+(chuyen tien|chuyen|ck|thanh toan|ft\d+)/i);
-        if (matchName && matchName[1].trim()) {
-            const cleanedName = matchName[1].replace(/^(IBFT|MBVCB|VPB|TCB|TPB|VMB|BIDV|Agribank|Vietinbank)\s+/i, '').trim();
-            if (cleanedName.length >= 3) {
-                return cleanedName;
+    if (parts && parts[0]) {
+        const potentialName = parts[0].trim();
+        const words = potentialName.split(/\s+/);
+        
+        // Tên hợp lệ: 2 đến 6 từ, chứa chữ cái tiếng Việt / La Tinh
+        if (words.length >= 2 && words.length <= 6) {
+            const isName = words.every(w => 
+                /^[A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐĨŨƠƯẠ-Ỹa-zàáâãèéêìíòóôõùúýăđĩũơưạ-ỹ]+$/.test(w)
+            );
+            if (isName) {
+                return potentialName;
             }
         }
     }
 
-    if (tx.referenceCode) {
-        return `Mã GD: ${tx.referenceCode}`;
+    // 2. Dự phòng 1: Chuỗi từ VIẾT HOA hoàn toàn ở đầu
+    const matchAllCaps = cleanContent.match(/^([A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐĨŨƠƯẠ-Ỹ]{2,}(\s+[A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐĨŨƠƯẠ-Ỹ]{2,}){1,5})/);
+    if (matchAllCaps && matchAllCaps[1]) {
+        return matchAllCaps[1].trim();
     }
 
-    if (tx.code) {
-        return `Mã: ${tx.code}`;
+    // 3. Dự phòng 2: Chuỗi từ Viết Hoa Chữ Cái Đầu ở đầu
+    const matchTitleCase = cleanContent.match(/^([A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐĨŨƠƯẠ-Ỹ][a-zàáâãèéêìíòóôõùúýăđĩũơưạ-ỹ]+(\s+[A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐĨŨƠƯẠ-Ỹ][a-zàáâãèéêìíòóôõùúýăđĩũơưạ-ỹ]+){1,5})/);
+    if (matchTitleCase && matchTitleCase[1]) {
+        return matchTitleCase[1].trim();
     }
 
+    // 4. Nếu không phải tên người gửi thì dùng Mã GD hoặc Cổng
+    if (tx.referenceCode) return `Mã GD: ${tx.referenceCode}`;
     return tx.gateway ? `Cổng ${tx.gateway}` : 'Khách hàng';
 }
 
@@ -949,10 +982,10 @@ function handleIncomingTpBankPayment(tx, isInitial = false) {
 
 async function loadInitialTransactions() {
     try {
-        const res = await fetch('/api/transactions');
-        if (res.ok) {
-            const data = await res.json();
-            if (data.success && Array.isArray(data.transactions)) {
+        const res = await fetch('/api/transactions', { cache: 'no-store' });
+        if (res && res.ok) {
+            const data = await res.json().catch(() => null);
+            if (data && data.success && Array.isArray(data.transactions)) {
                 tpBankHistoryList = [];
                 for (let i = data.transactions.length - 1; i >= 0; i--) {
                     const tx = data.transactions[i];
@@ -976,12 +1009,13 @@ function startPollingFallback() {
         clearInterval(pollingIntervalId);
         pollingIntervalId = null;
     }
+    // Polling dự phòng nhẹ nhàng mỗi 10 giây (giảm tần suất spam và tránh bị extension trình duyệt can thiệp)
     pollingIntervalId = setInterval(async () => {
         try {
-            const res = await fetch('/api/transactions');
-            if (res.ok) {
-                const data = await res.json();
-                if (data.success && Array.isArray(data.transactions)) {
+            const res = await fetch('/api/transactions', { cache: 'no-store' });
+            if (res && res.ok) {
+                const data = await res.json().catch(() => null);
+                if (data && data.success && Array.isArray(data.transactions)) {
                     for (let i = data.transactions.length - 1; i >= 0; i--) {
                         const tx = data.transactions[i];
                         if (tx && tx.id && !processedClientTxIds.has(String(tx.id))) {
@@ -993,7 +1027,7 @@ function startPollingFallback() {
         } catch (e) {
             /* Bỏ qua lỗi polling định kỳ */
         }
-    }, 2000);
+    }, 10000);
 }
 
 let activeEventSource = null;

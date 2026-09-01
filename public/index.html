@@ -149,7 +149,31 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch(() => {});
+                navigator.serviceWorker.register('/sw.js').then((reg) => {
+                    // Ép buộc PWA kiểm tra bản cập nhật mới từ Vercel mỗi lần mở web/app
+                    reg.update();
+
+                    // Tự động lắng nghe khi phát hiện phiên bản mã mới được cài đặt
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        if (newWorker) {
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    window.location.reload();
+                                }
+                            });
+                        }
+                    });
+                }).catch(() => {});
+
+                // Khi Service Worker bản mới kích hoạt, tự động reload lại trang
+                let refreshing = false;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (!refreshing) {
+                        refreshing = true;
+                        window.location.reload();
+                    }
+                });
             });
         }
     </script>
