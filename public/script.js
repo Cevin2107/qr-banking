@@ -732,7 +732,7 @@ const toastContainer = document.getElementById('toastContainer');
 const historyTbody = document.getElementById('historyTbody');
 let tpBankHistoryList = [];
 
-// Phát âm thanh "Ting!" nhận tiền trong trẻo bằng Web Audio API
+// Phát âm thanh "Ting-Ting!" nhận tiền ngân vang sang trọng (Apple Pay / POS Chime Style)
 function playSuccessChime() {
     try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -740,35 +740,32 @@ function playSuccessChime() {
         const ctx = new AudioCtx();
         const now = ctx.currentTime;
 
-        // Tone chính: C7 (2093 Hz) - tiếng Ting cao, sắc nét
-        const oscMain = ctx.createOscillator();
-        const gainMain = ctx.createGain();
-        oscMain.type = 'sine';
-        oscMain.frequency.setValueAtTime(2093, now);
+        // Cấu trúc hợp âm 3 nốt ngân vang: E6 -> A6 -> C7 + E7 (Harmonic Crystal Ring kéo dài 1.5 giây)
+        const notes = [
+            { freq: 1318.51, time: now + 0.00, duration: 0.9, gain: 0.20 }, // E6 (Khởi đầu mượt)
+            { freq: 1760.00, time: now + 0.08, duration: 1.1, gain: 0.28 }, // A6 (Nhịp lướt)
+            { freq: 2093.00, time: now + 0.18, duration: 1.5, gain: 0.40 }, // C7 (Nốt Ting chính)
+            { freq: 2637.02, time: now + 0.18, duration: 1.4, gain: 0.20 }  // E7 (Chuông ngọc họa âm kéo dài)
+        ];
 
-        gainMain.gain.setValueAtTime(0, now);
-        gainMain.gain.linearRampToValueAtTime(0.35, now + 0.006);
-        gainMain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+        notes.forEach(({ freq, time, duration, gain }) => {
+            const osc = ctx.createOscillator();
+            const gainNode = ctx.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, time);
 
-        oscMain.connect(gainMain);
-        gainMain.connect(ctx.destination);
-        oscMain.start(now);
-        oscMain.stop(now + 0.6);
+            // Volume Envelope: Tăng tốc 4ms, giảm ngân kéo dài 1.5s cực kỳ êm ái
+            gainNode.gain.setValueAtTime(0.0001, time);
+            gainNode.gain.linearRampToValueAtTime(gain, time + 0.008);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
-        // Tone phụ: E7 (2637 Hz) - tạo ngân vang kim loại mượt như tiếng ngân chuông ngân hàng
-        const oscHarmonic = ctx.createOscillator();
-        const gainHarmonic = ctx.createGain();
-        oscHarmonic.type = 'sine';
-        oscHarmonic.frequency.setValueAtTime(2637.02, now);
+            osc.connect(gainNode);
+            gainNode.connect(ctx.destination);
 
-        gainHarmonic.gain.setValueAtTime(0, now);
-        gainHarmonic.gain.linearRampToValueAtTime(0.12, now + 0.006);
-        gainHarmonic.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-
-        oscHarmonic.connect(gainHarmonic);
-        gainHarmonic.connect(ctx.destination);
-        oscHarmonic.start(now);
-        oscHarmonic.stop(now + 0.4);
+            osc.start(time);
+            osc.stop(time + duration);
+        });
     } catch (e) {
         /* Trình duyệt chặn autoplay audio trước khi có tương tác chuột/bàn phím */
     }
