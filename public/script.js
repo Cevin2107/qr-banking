@@ -790,14 +790,29 @@ function showToast({ type = 'dynamic', badgeText, title, amount, sender, content
 
     const formattedAmount = formatMoney(amount);
 
+    const isMatched = type === 'matched';
+    const iconSvg = isMatched 
+        ? `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`
+        : `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+
     toast.innerHTML = `
-        <button type="button" class="toast-close" aria-label="Đóng">&times;</button>
-        <div class="toast-badge">${escapeHtml(badgeText || 'THÔNG BÁO GIAO DỊCH')}</div>
-        <div class="toast-title">${escapeHtml(title)}</div>
-        <div class="toast-amount">+${formattedAmount} ₫</div>
-        <div class="toast-meta">
-            ${sender ? `<span><strong>Từ:</strong> ${escapeHtml(sender)}</span>` : ''}
-            <span><strong>Nội dung:</strong> ${escapeHtml(content || '—')}</span>
+        <div class="toast-glow"></div>
+        <button type="button" class="toast-close" aria-label="Đóng">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+        <div class="toast-content">
+            <div class="toast-header">
+                ${iconSvg}
+                <div class="toast-badge">${escapeHtml(badgeText || 'THÔNG BÁO GIAO DỊCH')}</div>
+            </div>
+            <div class="toast-body">
+                <div class="toast-title">${escapeHtml(title)}</div>
+                <div class="toast-amount">+${formattedAmount} ₫</div>
+            </div>
+            <div class="toast-meta">
+                ${sender ? `<div class="meta-row"><span class="meta-label">Từ:</span> <span class="meta-value">${escapeHtml(sender)}</span></div>` : ''}
+                <div class="meta-row"><span class="meta-label">Nội dung:</span> <span class="meta-value">${escapeHtml(content || '—')}</span></div>
+            </div>
         </div>
     `;
 
@@ -824,6 +839,32 @@ function removeToast(toast) {
     }, 300);
 }
 
+function parseSenderInfo(tx) {
+    if (!tx) return 'Khách hàng';
+    const content = (tx.content || '').trim();
+    
+    if (content) {
+        // Thử tách tên người gửi đứng trước các từ khóa chuyển tiền thường gặp (ví dụ "DAO BA ANH QUAN chuyen tien...")
+        const matchName = content.match(/^([A-Z\s]{3,35})\s+(chuyen tien|chuyen|ck|thanh toan|ft\d+)/i);
+        if (matchName && matchName[1].trim()) {
+            const cleanedName = matchName[1].replace(/^(IBFT|MBVCB|VPB|TCB|TPB|VMB|BIDV|Agribank|Vietinbank)\s+/i, '').trim();
+            if (cleanedName.length >= 3) {
+                return cleanedName;
+            }
+        }
+    }
+
+    if (tx.referenceCode) {
+        return `Mã GD: ${tx.referenceCode}`;
+    }
+
+    if (tx.code) {
+        return `Mã: ${tx.code}`;
+    }
+
+    return tx.gateway ? `Cổng ${tx.gateway}` : 'Khách hàng';
+}
+
 function renderHistoryTable(isNew = false) {
     if (!historyTbody) return;
 
@@ -842,7 +883,7 @@ function renderHistoryTable(isNew = false) {
         const isLatest = isNew && index === 0;
         const timeStr = tx.transactionDate || (tx.receivedAt ? new Date(tx.receivedAt).toLocaleTimeString('vi-VN') : '—');
         const amountStr = `+${formatMoney(tx.transferAmount)} ₫`;
-        const senderStr = tx.description || tx.gateway || 'Khách hàng';
+        const senderStr = parseSenderInfo(tx);
         const contentStr = tx.content || '—';
 
         return `
@@ -888,7 +929,7 @@ function handleIncomingTpBankPayment(tx, isInitial = false) {
                 badgeText: 'XÁC NHẬN KHỚP SỐ TIỀN ✓',
                 title: 'Đã nhận đúng số tiền trên mã QR TPBank!',
                 amount: tx.transferAmount,
-                sender: tx.description || tx.content || 'Khách hàng',
+                sender: parseSenderInfo(tx),
                 content: tx.content
             });
             setStatus('ready', 'Đã thanh toán ✓');
@@ -901,7 +942,7 @@ function handleIncomingTpBankPayment(tx, isInitial = false) {
         badgeText: 'NHẬN CHUYỂN KHOẢN TPBANK',
         title: 'Tài khoản TPBank vừa nhận tiền',
         amount: tx.transferAmount,
-        sender: tx.description || tx.content || 'Khách hàng',
+        sender: parseSenderInfo(tx),
         content: tx.content
     });
 }

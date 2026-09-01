@@ -821,18 +821,18 @@ button { font-family: inherit; cursor: pointer; }
 
 .toast {
     pointer-events: auto;
-    background: #0f172a;
-    color: #ffffff;
     border-radius: var(--r-md);
-    padding: 18px 22px;
-    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+    padding: 20px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15);
     display: flex;
     flex-direction: column;
-    gap: 8px;
     animation: toastIn 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
     transition: opacity 300ms ease, transform 300ms ease;
     position: relative;
     overflow: hidden;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .toast.is-hiding {
@@ -851,120 +851,169 @@ button { font-family: inherit; cursor: pointer; }
     }
 }
 
-/* Style A: QR Không có số tiền (Linh hoạt) */
-.toast-dynamic {
-    border: 1px solid rgba(56, 189, 248, 0.4);
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-}
-
-.toast-dynamic .toast-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #38bdf8;
-    background: rgba(56, 189, 248, 0.12);
-    padding: 4px 10px;
-    border-radius: var(--r-pill);
-    align-self: flex-start;
-}
-
-.toast-dynamic .toast-amount {
-    font-family: var(--font-display);
-    font-size: 26px;
-    font-weight: 700;
-    color: #38bdf8;
-    letter-spacing: -0.01em;
-    margin: 2px 0;
-}
-
-/* Style B: QR Có số tiền (Khớp chính xác số tiền) */
-.toast-matched {
-    border: 1px solid #10b981;
-    background: linear-gradient(135deg, #064e3b 0%, #022c22 100%);
-    box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
-}
-
-.toast-matched::before {
-    content: '';
+.toast-glow {
     position: absolute;
     top: 0;
     left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, #34d399, #10b981, #6ee7b7);
-    animation: glowBar 2s linear infinite;
+    width: 100%;
+    height: 4px;
 }
 
-@keyframes glowBar {
-    0% { filter: hue-rotate(0deg); }
-    100% { filter: hue-rotate(360deg); }
+.toast-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: relative;
+    z-index: 2;
 }
 
-.toast-matched .toast-badge {
-    display: inline-flex;
+.toast-header {
+    display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+}
+
+.toast-icon {
+    width: 20px;
+    height: 20px;
+}
+
+.toast-badge {
     font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #6ee7b7;
-    background: rgba(16, 185, 129, 0.2);
     padding: 4px 10px;
     border-radius: var(--r-pill);
-    align-self: flex-start;
 }
 
-.toast-matched .toast-amount {
-    font-family: var(--font-display);
-    font-size: 28px;
-    font-weight: 700;
-    color: #34d399;
-    letter-spacing: -0.01em;
-    margin: 2px 0;
+.toast-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .toast-title {
     font-weight: 600;
     font-size: 15px;
-    color: #ffffff;
+    color: var(--ink);
+}
+
+.toast-amount {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
 }
 
 .toast-meta {
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.75);
+    color: var(--slate);
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    padding-top: 8px;
+    gap: 6px;
+    border-top: 1px solid var(--border-light);
+    padding-top: 12px;
     margin-top: 4px;
 }
 
-.toast-meta span {
+.meta-row {
+    display: flex;
+    gap: 8px;
+}
+
+.meta-label {
+    font-weight: 500;
+    color: var(--muted);
+    flex-shrink: 0;
+}
+
+.meta-value {
+    color: var(--ink);
     word-break: break-word;
 }
 
 .toast-close {
     position: absolute;
-    top: 12px;
-    right: 12px;
+    top: 16px;
+    right: 16px;
     background: none;
     border: none;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
+    color: var(--muted);
+    width: 28px;
+    height: 28px;
     padding: 4px;
+    cursor: pointer;
+    z-index: 10;
+    border-radius: var(--r-pill);
+    transition: background-color 150ms ease, color 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .toast-close:hover {
-    color: #ffffff;
+    color: var(--ink);
+    background: var(--stone);
+}
+
+/* --- Theming for Dynamic vs Matched --- */
+
+/* Dynamic (Default/Info) */
+.toast-dynamic {
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    box-shadow: 0 12px 36px rgba(14, 165, 233, 0.12);
+}
+
+.toast-dynamic .toast-glow {
+    background: linear-gradient(90deg, #38bdf8, #0ea5e9, #0284c7);
+}
+
+.toast-dynamic .toast-icon {
+    color: #0ea5e9;
+}
+
+.toast-dynamic .toast-badge {
+    color: #0284c7;
+    background: rgba(14, 165, 233, 0.12);
+}
+
+.toast-dynamic .toast-amount {
+    color: #0ea5e9;
+}
+
+/* Matched (Success/Wow) */
+.toast-matched {
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    box-shadow: 0 16px 40px rgba(16, 185, 129, 0.2);
+    background: linear-gradient(145deg, #ffffff, #f0fdf4);
+}
+
+.toast-matched .toast-glow {
+    background: linear-gradient(90deg, #34d399, #10b981, #059669);
+    animation: glowBar 2s linear infinite;
+}
+
+.toast-matched .toast-icon {
+    color: #10b981;
+    filter: drop-shadow(0 2px 4px rgba(16, 185, 129, 0.3));
+}
+
+.toast-matched .toast-badge {
+    color: #059669;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.toast-matched .toast-amount {
+    color: #10b981;
+    text-shadow: 0 2px 10px rgba(16, 185, 129, 0.2);
+}
+
+@keyframes glowBar {
+    0% { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(360deg); }
 }
 
 /* ============ Lịch sử giao dịch TPBank ============ */
