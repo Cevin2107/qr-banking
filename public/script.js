@@ -930,6 +930,67 @@ function renderHistoryTable(isNew = false) {
 const processedClientTxIds = new Set();
 let isInitialLoadComplete = false;
 
+/* ============ Thông báo đẩy Hệ điều hành (OS Push Notification) ============ */
+
+const enableNotifBtn = document.getElementById('enableNotifBtn');
+
+function updateNotifButtonState() {
+    if (!enableNotifBtn) return;
+    if (!('Notification' in window)) {
+        enableNotifBtn.style.display = 'none';
+        return;
+    }
+
+    if (Notification.permission === 'granted') {
+        enableNotifBtn.textContent = '🔔 Đã bật thông báo hệ thống ✓';
+        enableNotifBtn.classList.add('is-granted');
+    } else if (Notification.permission === 'denied') {
+        enableNotifBtn.textContent = '🔕 Thông báo bị chặn';
+        enableNotifBtn.disabled = true;
+    } else {
+        enableNotifBtn.textContent = '🔔 Bật thông báo hệ thống';
+        enableNotifBtn.classList.remove('is-granted');
+    }
+}
+
+if (enableNotifBtn) {
+    enableNotifBtn.addEventListener('click', async () => {
+        if (!('Notification' in window)) return;
+        const perm = await Notification.requestPermission();
+        updateNotifButtonState();
+        if (perm === 'granted') {
+            sendSystemNotification({
+                title: 'CevinPay — Đã bật thông báo hệ thống 🟢',
+                body: 'Bạn sẽ nhận được thông báo đẩy tức thì khi tiền về tài khoản TPBank.'
+            });
+        }
+    });
+}
+
+function sendSystemNotification({ title, body, icon = '/image-192.png', tag = 'tpbank-payment' }) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+    try {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.ready.then((reg) => {
+                reg.showNotification(title, {
+                    body,
+                    icon,
+                    badge: icon,
+                    tag: `${tag}-${Date.now()}`,
+                    vibrate: [200, 100, 200, 100, 200],
+                    renotify: true,
+                    data: { url: '/' }
+                });
+            });
+        } else {
+            new Notification(title, { body, icon, vibrate: [200, 100, 200] });
+        }
+    } catch (e) {
+        console.warn('Không gửi được thông báo hệ thống:', e);
+    }
+}
+
 function handleIncomingTpBankPayment(tx, isInitial = false) {
     if (!tx || !tx.id) return;
     const strId = String(tx.id);
@@ -945,6 +1006,12 @@ function handleIncomingTpBankPayment(tx, isInitial = false) {
 
     // Không nổ Toast hay phát âm thanh nếu đây là lần nạp dữ liệu ban đầu khi mới mở trang
     if (isInitial || !isInitialLoadComplete) return;
+
+    // Gửi thông báo đẩy hệ thống (OS Lockscreen / Desktop Notification)
+    sendSystemNotification({
+        title: `+${formatMoney(tx.transferAmount)} ₫ · TPBank 🟢`,
+        body: `Từ: ${parseSenderInfo(tx)} | ND: ${tx.content || '—'}`
+    });
 
     // Bật thông báo Toast nhận tiền TPBank
     const currentAmount = parseMoney(amountInput.value);
@@ -1094,6 +1161,7 @@ function initApp() {
     qrImg.src = initialQrUrl;
 
     updateHistorySectionVisibility();
+    updateNotifButtonState();
     loadInitialTransactions();
     initRealtimeEvents();
 }

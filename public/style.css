@@ -1109,6 +1109,39 @@ button { font-family: inherit; cursor: pointer; }
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    flex-wrap: wrap;
+}
+
+.history-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-notif {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(24, 99, 220, 0.08);
+    border: 1px solid rgba(24, 99, 220, 0.25);
+    color: var(--action-blue);
+    border-radius: var(--r-pill);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 160ms ease;
+}
+
+.btn-notif:hover {
+    background: rgba(24, 99, 220, 0.15);
+    transform: translateY(-1px);
+}
+
+.btn-notif.is-granted {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #059669;
 }
 
 .history-head h3 {
