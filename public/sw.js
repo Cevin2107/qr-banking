@@ -44,19 +44,28 @@ function initBackgroundPush() {
         const payload = JSON.parse(e.data);
         if (payload && payload.message) {
           const tx = JSON.parse(payload.message);
-          if (tx && tx.transferAmount) {
-            const amountStr = String(tx.transferAmount).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-            const title = `+${amountStr} ₫ · Nhận tiền TPBank 🟢`;
-            const sender = tx.content || tx.description || 'Khách hàng';
+          if (tx && tx.transferAmount && tx.id) {
+            // Kiểm tra xem có tab PWA nào đang mở và được thắp sáng ở màn hình chính hay không
+            clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+              const hasFocusedTab = clientList.some(c => c.visibilityState === 'visible' && c.focused);
+              
+              // Nếu tab đang mở ở màn hình chính, script.js đã xử lý rồi -> SW bỏ qua để tránh trùng lặp 2 thông báo!
+              if (!hasFocusedTab) {
+                const amountStr = String(tx.transferAmount).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                const title = `+${amountStr} ₫ · TPBank 🟢`;
+                const sender = tx.content || tx.description || 'Khách hàng';
 
-            self.registration.showNotification(title, {
-              body: `Nội dung: ${sender}`,
-              icon: '/image-192.png',
-              badge: '/image-192.png',
-              tag: `tpbank-tx-${tx.id || Date.now()}`,
-              vibrate: [200, 100, 200, 100, 200],
-              renotify: true,
-              data: { url: '/' }
+                self.registration.showNotification(title, {
+                  body: `Từ / ND: ${sender}`,
+                  icon: '/image-192.png',
+                  badge: '/image-192.png',
+                  tag: `tpbank-tx-${tx.id}`,
+                  vibrate: [200, 100, 200, 100, 200],
+                  renotify: true,
+                  silent: false,
+                  data: { url: '/' }
+                });
+              }
             });
           }
         }

@@ -964,7 +964,8 @@ if (enableNotifBtn) {
         if (perm === 'granted') {
             sendSystemNotification({
                 title: 'CevinPay — Đã bật thông báo hệ thống 🟢',
-                body: 'Bạn sẽ nhận được thông báo đẩy tức thì khi tiền về tài khoản TPBank.'
+                body: 'Bạn sẽ nhận được thông báo đẩy tức thì khi tiền về tài khoản TPBank.',
+                tag: 'status-update'
             });
         }
     });
@@ -980,14 +981,15 @@ function sendSystemNotification({ title, body, icon = '/image-192.png', tag = 't
                     body,
                     icon,
                     badge: icon,
-                    tag: `${tag}-${Date.now()}`,
+                    tag,
                     vibrate: [200, 100, 200, 100, 200],
                     renotify: true,
+                    silent: false,
                     data: { url: '/' }
                 });
             });
         } else {
-            new Notification(title, { body, icon, vibrate: [200, 100, 200] });
+            new Notification(title, { body, icon, vibrate: [200, 100, 200], tag, renotify: true, silent: false });
         }
     } catch (e) {
         console.warn('Không gửi được thông báo hệ thống:', e);
@@ -1013,7 +1015,8 @@ function handleIncomingTpBankPayment(tx, isInitial = false) {
     // Gửi thông báo đẩy hệ thống (OS Lockscreen / Desktop Notification)
     sendSystemNotification({
         title: `+${formatMoney(tx.transferAmount)} ₫ · TPBank 🟢`,
-        body: `Từ: ${parseSenderInfo(tx)} | ND: ${tx.content || '—'}`
+        body: `Từ: ${parseSenderInfo(tx)} | ND: ${tx.content || '—'}`,
+        tag: `tpbank-tx-${tx.id}`
     });
 
     // Bật thông báo Toast nhận tiền TPBank
