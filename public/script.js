@@ -732,7 +732,7 @@ const toastContainer = document.getElementById('toastContainer');
 const historyTbody = document.getElementById('historyTbody');
 let tpBankHistoryList = [];
 
-// Phát âm thanh chuông báo nhận tiền nhẹ bằng Web Audio API
+// Phát âm thanh "Ting!" nhận tiền trong trẻo bằng Web Audio API
 function playSuccessChime() {
     try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -740,24 +740,37 @@ function playSuccessChime() {
         const ctx = new AudioCtx();
         const now = ctx.currentTime;
 
-        const osc1 = ctx.createOscillator();
-        const gain1 = ctx.createGain();
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(523.25, now); // C5
-        osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
-        osc1.frequency.exponentialRampToValueAtTime(783.99, now + 0.3); // G5
-        osc1.frequency.exponentialRampToValueAtTime(1046.50, now + 0.45); // C6
+        // Tone chính: C7 (2093 Hz) - tiếng Ting cao, sắc nét
+        const oscMain = ctx.createOscillator();
+        const gainMain = ctx.createGain();
+        oscMain.type = 'sine';
+        oscMain.frequency.setValueAtTime(2093, now);
 
-        gain1.gain.setValueAtTime(0.15, now);
-        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+        gainMain.gain.setValueAtTime(0, now);
+        gainMain.gain.linearRampToValueAtTime(0.35, now + 0.006);
+        gainMain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
 
-        osc1.connect(gain1);
-        gain1.connect(ctx.destination);
+        oscMain.connect(gainMain);
+        gainMain.connect(ctx.destination);
+        oscMain.start(now);
+        oscMain.stop(now + 0.6);
 
-        osc1.start(now);
-        osc1.stop(now + 0.8);
+        // Tone phụ: E7 (2637 Hz) - tạo ngân vang kim loại mượt như tiếng ngân chuông ngân hàng
+        const oscHarmonic = ctx.createOscillator();
+        const gainHarmonic = ctx.createGain();
+        oscHarmonic.type = 'sine';
+        oscHarmonic.frequency.setValueAtTime(2637.02, now);
+
+        gainHarmonic.gain.setValueAtTime(0, now);
+        gainHarmonic.gain.linearRampToValueAtTime(0.12, now + 0.006);
+        gainHarmonic.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+
+        oscHarmonic.connect(gainHarmonic);
+        gainHarmonic.connect(ctx.destination);
+        oscHarmonic.start(now);
+        oscHarmonic.stop(now + 0.4);
     } catch (e) {
-        /* Trình duyệt có thể chặn autoplay audio trước khi tương tác */
+        /* Trình duyệt chặn autoplay audio trước khi có tương tác chuột/bàn phím */
     }
 }
 
@@ -814,7 +827,9 @@ function removeToast(toast) {
 function renderHistoryTable(isNew = false) {
     if (!historyTbody) return;
 
-    if (tpBankHistoryList.length === 0) {
+    const displayList = tpBankHistoryList.slice(0, 5);
+
+    if (displayList.length === 0) {
         historyTbody.innerHTML = `
             <tr class="empty-row">
                 <td colspan="4">Chưa có giao dịch TPBank nào</td>
@@ -823,7 +838,7 @@ function renderHistoryTable(isNew = false) {
         return;
     }
 
-    historyTbody.innerHTML = tpBankHistoryList.map((tx, index) => {
+    historyTbody.innerHTML = displayList.map((tx, index) => {
         const isLatest = isNew && index === 0;
         const timeStr = tx.transactionDate || (tx.receivedAt ? new Date(tx.receivedAt).toLocaleTimeString('vi-VN') : '—');
         const amountStr = `+${formatMoney(tx.transferAmount)} ₫`;
@@ -842,20 +857,25 @@ function renderHistoryTable(isNew = false) {
 }
 
 const processedClientTxIds = new Set();
+let isInitialLoadComplete = false;
 
-function handleIncomingTpBankPayment(tx) {
+function handleIncomingTpBankPayment(tx, isInitial = false) {
     if (!tx || !tx.id) return;
-    if (processedClientTxIds.has(tx.id)) return;
-    processedClientTxIds.add(tx.id);
+    const strId = String(tx.id);
+    if (processedClientTxIds.has(strId)) return;
+    processedClientTxIds.add(strId);
 
-    console.log('⚡ Xử lý giao dịch TPBank mới:', tx);
+    console.log('⚡ Xử lý giao dịch TPBank:', tx);
 
     // Cập nhật danh sách lịch sử
     tpBankHistoryList.unshift(tx);
-    if (tpBankHistoryList.length > 100) tpBankHistoryList.pop();
-    renderHistoryTable(true);
+    if (tpBankHistoryList.length > 50) tpBankHistoryList.pop();
+    renderHistoryTable(!isInitial);
 
-    // Bật thông báo Toast nhận tiền TPBank dù người dùng đang ở tab nào
+    // Không nổ Toast hay phát âm thanh nếu đây là lần nạp dữ liệu ban đầu khi mới mở trang
+    if (isInitial || !isInitialLoadComplete) return;
+
+    // Bật thông báo Toast nhận tiền TPBank
     const currentAmount = parseMoney(amountInput.value);
 
     if (currentBankKey === 'TPB' && currentAmount) {
@@ -895,16 +915,16 @@ async function loadInitialTransactions() {
                 tpBankHistoryList = [];
                 for (let i = data.transactions.length - 1; i >= 0; i--) {
                     const tx = data.transactions[i];
-                    if (tx.id) {
-                        processedClientTxIds.add(tx.id);
-                        tpBankHistoryList.unshift(tx);
+                    if (tx && tx.id) {
+                        handleIncomingTpBankPayment(tx, true);
                     }
                 }
-                renderHistoryTable(false);
             }
         }
     } catch (e) {
         console.warn('Lỗi tải lịch sử giao dịch:', e);
+    } finally {
+        isInitialLoadComplete = true;
     }
 }
 
@@ -923,8 +943,8 @@ function startPollingFallback() {
                 if (data.success && Array.isArray(data.transactions)) {
                     for (let i = data.transactions.length - 1; i >= 0; i--) {
                         const tx = data.transactions[i];
-                        if (tx.id && !processedClientTxIds.has(tx.id)) {
-                            handleIncomingTpBankPayment(tx);
+                        if (tx && tx.id && !processedClientTxIds.has(String(tx.id))) {
+                            handleIncomingTpBankPayment(tx, false);
                         }
                     }
                 }
@@ -932,32 +952,47 @@ function startPollingFallback() {
         } catch (e) {
             /* Bỏ qua lỗi polling định kỳ */
         }
-    }, 4000);
+    }, 2000);
 }
 
 let activeEventSource = null;
+let cloudEventSource = null;
 
 function initRealtimeEvents() {
     if (activeEventSource) {
         try { activeEventSource.close(); } catch (e) {}
         activeEventSource = null;
     }
+    if (cloudEventSource) {
+        try { cloudEventSource.close(); } catch (e) {}
+        cloudEventSource = null;
+    }
 
     if (window.EventSource) {
-        activeEventSource = new EventSource('/api/events');
+        // 1. Kết nối SSE nội bộ (dành cho local server)
+        try {
+            activeEventSource = new EventSource('/api/events');
+            activeEventSource.addEventListener('tpbank_payment', (e) => {
+                try {
+                    const tx = JSON.parse(e.data);
+                    handleIncomingTpBankPayment(tx, false);
+                } catch (err) {}
+            });
+        } catch (e) {}
 
-        activeEventSource.addEventListener('tpbank_payment', (e) => {
-            try {
-                const tx = JSON.parse(e.data);
-                handleIncomingTpBankPayment(tx);
-            } catch (err) {
-                console.error('Lỗi xử lý sự kiện SSE:', err);
-            }
-        });
-
-        activeEventSource.onerror = (err) => {
-            console.warn('Kết nối SSE bị ngắt, duy trì bằng Polling fallback...', err);
-        };
+        // 2. Kết nối Kênh Cloud SSE siêu tốc (dành cho Vercel & Production)
+        try {
+            cloudEventSource = new EventSource('https://ntfy.sh/cevinpay_sepay_webhook_tpbank_10002150181/sse');
+            cloudEventSource.onmessage = (e) => {
+                try {
+                    const payload = JSON.parse(e.data);
+                    if (payload && payload.message) {
+                        const tx = JSON.parse(payload.message);
+                        handleIncomingTpBankPayment(tx, false);
+                    }
+                } catch (err) {}
+            };
+        } catch (e) {}
     }
 
     startPollingFallback();
@@ -966,6 +1001,9 @@ function initRealtimeEvents() {
 window.addEventListener('beforeunload', () => {
     if (activeEventSource) {
         try { activeEventSource.close(); } catch (e) {}
+    }
+    if (cloudEventSource) {
+        try { cloudEventSource.close(); } catch (e) {}
     }
 });
 

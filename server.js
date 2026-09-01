@@ -146,6 +146,17 @@ const server = http.createServer(async (req, res) => {
 
         // Đẩy sự kiện real-time SSE tới các client
         broadcastSseEvent('tpbank_payment', txRecord);
+
+        // Broadcast tức thì qua kênh Cloud PubSub ntfy
+        try {
+          if (typeof fetch !== 'undefined') {
+            fetch('https://ntfy.sh/cevinpay_sepay_webhook_tpbank_10002150181', {
+              method: 'POST',
+              headers: { 'Title': 'TPBank Payment' },
+              body: JSON.stringify(txRecord)
+            }).catch(() => {});
+          }
+        } catch (e) {}
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });

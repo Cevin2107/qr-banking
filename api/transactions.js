@@ -55,7 +55,7 @@ module.exports = async (req, res) => {
 
         return res.status(200).json({
           success: true,
-          transactions: formatted
+          transactions: formatted.slice(0, 5)
         });
       }
     } catch (e) {

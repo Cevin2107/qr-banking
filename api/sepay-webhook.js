@@ -89,6 +89,19 @@ module.exports = async (req, res) => {
         sseClients.delete(clientRes);
       }
     }
+
+    // Broadcast tức thì qua kênh Cloud PubSub (dưới 100ms) đến trình duyệt client
+    try {
+      if (typeof fetch !== 'undefined') {
+        await fetch('https://ntfy.sh/cevinpay_sepay_webhook_tpbank_10002150181', {
+          method: 'POST',
+          headers: { 'Title': 'TPBank Payment' },
+          body: JSON.stringify(txRecord)
+        });
+      }
+    } catch (err) {
+      console.error('❌ Lỗi broadcast ntfy:', err);
+    }
   }
 
   return res.status(200).json({ success: true });
