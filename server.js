@@ -78,7 +78,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   
   // Endpoint nhận Webhook từ SePay
-  if (url.pathname === '/api/sepay-webhook' && req.method === 'POST') {
+  if ((url.pathname === '/api/sepay-webhook' || url.pathname === '/') && req.method === 'POST') {
     let bodyChunks = [];
     req.on('data', chunk => bodyChunks.push(chunk));
     req.on('end', () => {
