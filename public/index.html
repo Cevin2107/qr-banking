@@ -108,11 +108,42 @@
                 </button>
             </form>
 
+            <!-- 3. Lịch sử chuyển khoản TPBank (tự động nhận qua SePay) -->
+            <section class="history-card" id="tpbankHistorySection" style="display: none;">
+                <div class="history-head">
+                    <div class="history-title-wrap">
+                        <h3>Lịch sử nhận tiền TPBank</h3>
+                        <span class="live-tag"><span class="pulse-dot"></span> Realtime</span>
+                    </div>
+                    <small>Biến động số dư tài khoản TPBank (SePay Webhook)</small>
+                </div>
+                <div class="history-table-wrap">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Thời gian</th>
+                                <th>Số tiền</th>
+                                <th>Từ / Người gửi</th>
+                                <th>Nội dung</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTbody">
+                            <tr class="empty-row">
+                                <td colspan="4">Chưa có giao dịch TPBank nào</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
             <footer class="app-footer">
                 <p>Hệ thống được phát triển bởi <strong>Đào Bá Anh Quân</strong></p>
             </footer>
         </div>
     </main>
+
+    <!-- Toast Notification Container (đặt ngoài khung QR) -->
+    <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
     <script src="script.js"></script>
     <script>

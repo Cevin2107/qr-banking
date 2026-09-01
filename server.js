@@ -2,8 +2,30 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+
+// Tự động đọc file .env ở môi trường local
+if (fs.existsSync(path.join(__dirname, '.env'))) {
+  const envContent = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+  envContent.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const [key, ...valParts] = trimmed.split('=');
+      const val = valParts.join('=').trim();
+      if (key && val && !process.env[key.trim()]) {
+        process.env[key.trim()] = val.replace(/^["']|["']$/g, '');
+      }
+    }
+  });
+}
 
 let PORT = parseInt(process.env.PORT, 10) || 3000;
+const SEPAY_SECRET_KEY = process.env.SEPAY_SECRET_KEY || '';
+
+// Bộ nhớ lưu trữ giao dịch chống trùng & lịch sử cho TPBank
+const processedTxIds = new Set();
+const tpBankTransactions = [];
+const sseClients = new Set();
 
 function normalizeBankId(bankCode) {
   return String(bankCode || '').trim();
@@ -41,11 +63,127 @@ function buildVietQrDeeplink(payload) {
   return null;
 }
 
+function broadcastSseEvent(event, data) {
+  const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const res of sseClients) {
+    try {
+      res.write(message);
+    } catch (e) {
+      sseClients.delete(res);
+    }
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   
-  console.log(`📥 ${req.method} ${url.pathname}`);
-  
+  // Endpoint nhận Webhook từ SePay
+  if (url.pathname === '/api/sepay-webhook' && req.method === 'POST') {
+    let bodyChunks = [];
+    req.on('data', chunk => bodyChunks.push(chunk));
+    req.on('end', () => {
+      const rawBody = Buffer.concat(bodyChunks).toString('utf8');
+      const signature = req.headers['x-sepay-signature'] || '';
+      const timestamp = req.headers['x-sepay-timestamp'] || '';
+
+      const expectedSignature = 'sha256=' + crypto.createHmac('sha256', SEPAY_SECRET_KEY)
+        .update(timestamp + '.' + rawBody)
+        .digest('hex');
+
+      if (signature !== expectedSignature) {
+        console.warn('⚠️ Webhook SePay chữ ký không hợp lệ!');
+        res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Invalid signature');
+        return;
+      }
+
+      let payload = {};
+      try {
+        payload = JSON.parse(rawBody);
+      } catch (e) {
+        console.error('❌ Lỗi parse JSON payload SePay');
+      }
+
+      const txId = payload.id;
+      if (txId && processedTxIds.has(txId)) {
+        console.log(`ℹ️ Giao dịch SePay ID ${txId} đã được xử lý trước đó (duplicate)`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+        return;
+      }
+
+      if (txId) {
+        processedTxIds.add(txId);
+      }
+
+      console.log('✅ Webhook SePay hợp lệ:', payload);
+
+      // Kiểm tra xem giao dịch có thuộc về TPBank không
+      const gateway = String(payload.gateway || '').toLowerCase();
+      const accountNumber = String(payload.accountNumber || '').trim();
+      const transferType = String(payload.transferType || 'in').toLowerCase();
+
+      const isTpBank = gateway.includes('tpb') || gateway.includes('tpbank') || accountNumber === '10002150181';
+
+      if (transferType === 'in' && isTpBank) {
+        const txRecord = {
+          id: payload.id || Date.now(),
+          gateway: payload.gateway || 'TPBank',
+          transactionDate: payload.transactionDate || new Date().toLocaleString('vi-VN'),
+          accountNumber: payload.accountNumber || '10002150181',
+          content: payload.content || '',
+          description: payload.description || payload.content || '',
+          transferAmount: Number(payload.transferAmount || 0),
+          referenceCode: payload.referenceCode || '',
+          receivedAt: new Date().toISOString()
+        };
+
+        // Lưu vào danh sách lịch sử TPBank
+        tpBankTransactions.unshift(txRecord);
+        if (tpBankTransactions.length > 100) {
+          tpBankTransactions.pop();
+        }
+
+        // Đẩy sự kiện real-time SSE tới các client
+        broadcastSseEvent('tpbank_payment', txRecord);
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+    });
+    return;
+  }
+
+  // Endpoint Server-Sent Events (SSE) để client nhận tin nhắn real-time
+  if (url.pathname === '/api/events') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.write(':\n\n'); // SSE comment to keep connection alive
+
+    sseClients.add(res);
+
+    req.on('close', () => {
+      sseClients.delete(res);
+    });
+    return;
+  }
+
+  // API lấy lịch sử giao dịch TPBank
+  if (url.pathname === '/api/transactions') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      success: true,
+      transactions: tpBankTransactions
+    }));
+    return;
+  }
+
   // API proxy cho ảnh VietQR (tránh lỗi CORS khi vẽ lên canvas)
   if (url.pathname === '/api/qr-proxy') {
     let targetUrl = url.searchParams.get('url');

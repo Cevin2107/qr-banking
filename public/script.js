@@ -217,12 +217,14 @@ function flashButton(btn, copiedText) {
     }, 1600);
 }
 
-copyAccountBtn.addEventListener('click', async () => {
-    const acc = getActiveAccount();
-    if (await copyToClipboard(acc.accountNumber)) {
-        flashButton(copyAccountBtn, 'Đã sao chép ✓');
-    }
-});
+if (copyAccountBtn) {
+    copyAccountBtn.addEventListener('click', async () => {
+        const acc = getActiveAccount();
+        if (await copyToClipboard(acc.accountNumber)) {
+            flashButton(copyAccountBtn, 'Đã sao chép ✓');
+        }
+    });
+}
 
 if (shareBtn) {
     shareBtn.addEventListener('click', async () => {
@@ -637,29 +639,31 @@ async function renderBillCanvas() {
     return canvas;
 }
 
-downloadBtn.addEventListener('click', async () => {
-    downloadBtn.disabled = true;
-    try {
-        const canvas = await renderBillCanvas();
-        const blob = await new Promise((resolve, reject) => {
-            canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob thất bại'))), 'image/png');
-        });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        const acc = getActiveAccount();
-        link.download = `cevinpay-qr-${acc.code.toLowerCase()}-${Date.now()}.png`;
-        link.href = url;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (error) {
-        console.error('Download error:', error);
-        setStatus('error', 'Lỗi tải ảnh');
-    } finally {
-        downloadBtn.disabled = false;
-    }
-});
+if (downloadBtn) {
+    downloadBtn.addEventListener('click', async () => {
+        downloadBtn.disabled = true;
+        try {
+            const canvas = await renderBillCanvas();
+            const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob thất bại'))), 'image/png');
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const acc = getActiveAccount();
+            link.download = `cevinpay-qr-${acc.code.toLowerCase()}-${Date.now()}.png`;
+            link.href = url;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) {
+            console.error('Download error:', error);
+            setStatus('error', 'Lỗi tải ảnh');
+        } finally {
+            downloadBtn.disabled = false;
+        }
+    });
+}
 
 /* ============ Khác ============ */
 
@@ -669,9 +673,11 @@ if (barClose && announcementBar) {
     });
 }
 
-document.getElementById('bankLogo').addEventListener('error', function () {
-    this.style.display = 'none';
-});
+if (bankLogo) {
+    bankLogo.addEventListener('error', function () {
+        this.style.display = 'none';
+    });
+}
 
 /* ============ Chuyển Tab Ngân Hàng ============ */
 
@@ -680,8 +686,20 @@ const bankLogo = document.getElementById('bankLogo');
 const bankNameSpan = document.getElementById('bankNameSpan');
 const accountHolder = document.getElementById('accountHolder');
 
+const tpbankHistorySection = document.getElementById('tpbankHistorySection');
+
+function updateHistorySectionVisibility() {
+    const el = document.getElementById('tpbankHistorySection');
+    if (!el) return;
+    if (currentBankKey === 'TPB') {
+        el.style.display = 'flex';
+    } else {
+        el.style.display = 'none';
+    }
+}
+
 function switchBankTab(bankKey) {
-    if (!ACCOUNTS[bankKey] || bankKey === currentBankKey) return;
+    if (!ACCOUNTS[bankKey]) return;
     currentBankKey = bankKey;
 
     bankTabBtns.forEach(btn => {
@@ -696,6 +714,7 @@ function switchBankTab(bankKey) {
     if (accountValue) accountValue.textContent = acc.accountNumber;
     if (accountHolder) accountHolder.textContent = acc.accountHolder;
 
+    updateHistorySectionVisibility();
     refreshQr();
 }
 
@@ -704,6 +723,244 @@ bankTabBtns.forEach(btn => {
         switchBankTab(btn.dataset.bank);
     });
 });
+
+/* ============ Real-time Webhook SePay & Lịch sử TPBank ============ */
+
+const toastContainer = document.getElementById('toastContainer');
+const historyTbody = document.getElementById('historyTbody');
+let tpBankHistoryList = [];
+
+// Phát âm thanh chuông báo nhận tiền nhẹ bằng Web Audio API
+function playSuccessChime() {
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const now = ctx.currentTime;
+
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(523.25, now); // C5
+        osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
+        osc1.frequency.exponentialRampToValueAtTime(783.99, now + 0.3); // G5
+        osc1.frequency.exponentialRampToValueAtTime(1046.50, now + 0.45); // C6
+
+        gain1.gain.setValueAtTime(0.15, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+
+        osc1.start(now);
+        osc1.stop(now + 0.8);
+    } catch (e) {
+        /* Trình duyệt có thể chặn autoplay audio trước khi tương tác */
+    }
+}
+
+function escapeHtml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function showToast({ type = 'dynamic', badgeText, title, amount, sender, content }) {
+    if (!toastContainer) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type === 'matched' ? 'toast-matched' : 'toast-dynamic'}`;
+
+    const formattedAmount = formatMoney(amount);
+
+    toast.innerHTML = `
+        <button type="button" class="toast-close" aria-label="Đóng">&times;</button>
+        <div class="toast-badge">${escapeHtml(badgeText || 'THÔNG BÁO GIAO DỊCH')}</div>
+        <div class="toast-title">${escapeHtml(title)}</div>
+        <div class="toast-amount">+${formattedAmount} ₫</div>
+        <div class="toast-meta">
+            ${sender ? `<span><strong>Từ:</strong> ${escapeHtml(sender)}</span>` : ''}
+            <span><strong>Nội dung:</strong> ${escapeHtml(content || '—')}</span>
+        </div>
+    `;
+
+    const closeBtn = toast.querySelector('.toast-close');
+    closeBtn.addEventListener('click', () => {
+        removeToast(toast);
+    });
+
+    toastContainer.appendChild(toast);
+    playSuccessChime();
+
+    setTimeout(() => {
+        removeToast(toast);
+    }, 8000);
+}
+
+function removeToast(toast) {
+    if (toast.classList.contains('is-hiding')) return;
+    toast.classList.add('is-hiding');
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    }, 300);
+}
+
+function renderHistoryTable(isNew = false) {
+    if (!historyTbody) return;
+
+    if (tpBankHistoryList.length === 0) {
+        historyTbody.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="4">Chưa có giao dịch TPBank nào</td>
+            </tr>
+        `;
+        return;
+    }
+
+    historyTbody.innerHTML = tpBankHistoryList.map((tx, index) => {
+        const isLatest = isNew && index === 0;
+        const timeStr = tx.transactionDate || (tx.receivedAt ? new Date(tx.receivedAt).toLocaleTimeString('vi-VN') : '—');
+        const amountStr = `+${formatMoney(tx.transferAmount)} ₫`;
+        const senderStr = tx.description || tx.gateway || 'Khách hàng';
+        const contentStr = tx.content || '—';
+
+        return `
+            <tr class="${isLatest ? 'new-row' : ''}">
+                <td class="time-cell">${escapeHtml(timeStr)}</td>
+                <td class="amount-cell">${amountStr}</td>
+                <td>${escapeHtml(senderStr)}</td>
+                <td>${escapeHtml(contentStr)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+const processedClientTxIds = new Set();
+
+function handleIncomingTpBankPayment(tx) {
+    if (!tx || !tx.id) return;
+    if (processedClientTxIds.has(tx.id)) return;
+    processedClientTxIds.add(tx.id);
+
+    console.log('⚡ Xử lý giao dịch TPBank mới:', tx);
+
+    // Cập nhật danh sách lịch sử
+    tpBankHistoryList.unshift(tx);
+    if (tpBankHistoryList.length > 100) tpBankHistoryList.pop();
+    renderHistoryTable(true);
+
+    // Chỉ xử lý thông báo nếu người dùng đang ở tab TPBank (Techcombank giữ nguyên)
+    if (currentBankKey === 'TPB') {
+        const currentAmount = parseMoney(amountInput.value);
+
+        if (!currentAmount) {
+            // Trường hợp 1: Tạo mã QR KHÔNG số tiền
+            showToast({
+                type: 'dynamic',
+                badgeText: 'NHẬN CHUYỂN KHOẢN TPBANK',
+                title: 'Tài khoản TPBank vừa nhận tiền',
+                amount: tx.transferAmount,
+                sender: tx.description || tx.content || 'Khách hàng',
+                content: tx.content
+            });
+        } else {
+            // Trường hợp 2: Tạo mã QR CÓ số tiền
+            const expectedAmount = parseInt(currentAmount, 10);
+            const receivedAmount = parseInt(tx.transferAmount, 10);
+
+            if (receivedAmount === expectedAmount) {
+                // Khớp chính xác số tiền!
+                showToast({
+                    type: 'matched',
+                    badgeText: 'XÁC NHẬN KHỚP SỐ TIỀN ✓',
+                    title: 'Đã nhận đúng số tiền trên mã QR!',
+                    amount: tx.transferAmount,
+                    sender: tx.description || tx.content || 'Khách hàng',
+                    content: tx.content
+                });
+                setStatus('ready', 'Đã thanh toán ✓');
+            } else {
+                // Thực nhận khác với số tiền khởi tạo trên QR
+                showToast({
+                    type: 'dynamic',
+                    badgeText: 'NHẬN TIỀN (KHÁC SỐ TIỀN QR)',
+                    title: 'Tài khoản TPBank vừa nhận tiền',
+                    amount: tx.transferAmount,
+                    sender: tx.description || tx.content || 'Khách hàng',
+                    content: tx.content
+                });
+            }
+        }
+    }
+}
+
+async function loadInitialTransactions() {
+    try {
+        const res = await fetch('/api/transactions');
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.transactions)) {
+                tpBankHistoryList = [];
+                for (let i = data.transactions.length - 1; i >= 0; i--) {
+                    const tx = data.transactions[i];
+                    if (tx.id) {
+                        processedClientTxIds.add(tx.id);
+                        tpBankHistoryList.unshift(tx);
+                    }
+                }
+                renderHistoryTable(false);
+            }
+        }
+    } catch (e) {
+        console.warn('Lỗi tải lịch sử giao dịch:', e);
+    }
+}
+
+function startPollingFallback() {
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/transactions');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success && Array.isArray(data.transactions)) {
+                    for (let i = data.transactions.length - 1; i >= 0; i--) {
+                        const tx = data.transactions[i];
+                        if (tx.id && !processedClientTxIds.has(tx.id)) {
+                            handleIncomingTpBankPayment(tx);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            /* Bỏ qua lỗi polling định kỳ */
+        }
+    }, 4000);
+}
+
+function initRealtimeEvents() {
+    if (window.EventSource) {
+        const eventSource = new EventSource('/api/events');
+
+        eventSource.addEventListener('tpbank_payment', (e) => {
+            try {
+                const tx = JSON.parse(e.data);
+                handleIncomingTpBankPayment(tx);
+            } catch (err) {
+                console.error('Lỗi xử lý sự kiện SSE:', err);
+            }
+        });
+
+        eventSource.onerror = (err) => {
+            console.warn('Kết nối SSE bị ngắt, duy trì bằng Polling fallback...', err);
+        };
+    }
+
+    startPollingFallback();
+}
 
 /* ============ Khởi tạo ============ */
 
@@ -718,6 +975,12 @@ function initApp() {
     const initialQrUrl = buildDirectQrUrl('');
     currentQrSrc = initialQrUrl;
     qrImg.src = initialQrUrl;
+
+    updateHistorySectionVisibility();
+    loadInitialTransactions();
+    initRealtimeEvents();
 }
 
+document.addEventListener('DOMContentLoaded', updateHistorySectionVisibility);
 initApp();
+
