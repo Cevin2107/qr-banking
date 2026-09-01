@@ -1,52 +1,28 @@
 // Service Worker cho PWA
-const CACHE_NAME = 'cevinpay-v5';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/script.js',
-  '/manifest.json',
-  '/image-192.png',
-  '/image-512.png'
-];
+const CACHE_NAME = 'cevinpay-v6';
 
-// Cài đặt Service Worker
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache);
-      })
-  );
+  self.skipWaiting();
 });
 
-// Kích hoạt Service Worker
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
+        cacheNames.map((cacheName) => caches.delete(cacheName))
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
-// Fetch - Cache first, then network
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  // Không bao giờ cache API requests hoặc SSE events
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+  // Ưu tiên lấy từ Network để luôn cập nhật mã mới nhất
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Cache hit - return response
-        if (response) {
-          return response;
-        }
-        return fetch(event.request);
-      }
-    )
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });

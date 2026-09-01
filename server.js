@@ -158,17 +158,26 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/events') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*'
     });
     res.write(':\n\n'); // SSE comment to keep connection alive
 
+    if (req.socket) {
+      req.socket.setKeepAlive(true);
+      req.socket.setTimeout(0);
+    }
+
     sseClients.add(res);
 
-    req.on('close', () => {
+    const cleanup = () => {
       sseClients.delete(res);
-    });
+      try { res.end(); } catch (e) {}
+    };
+
+    req.on('close', cleanup);
+    res.on('close', cleanup);
     return;
   }
 

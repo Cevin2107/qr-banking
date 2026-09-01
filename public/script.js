@@ -74,7 +74,8 @@ function buildDirectQrUrl(addInfo) {
     const params = new URLSearchParams();
     if (addInfo) params.set('addInfo', addInfo);
     const query = params.toString();
-    return `https://img.vietqr.io/image/${acc.bin}-${acc.accountNumber}-qr_only.png${query ? `?${query}` : ''}`;
+    const directUrl = `https://img.vietqr.io/image/${acc.bin}-${acc.accountNumber}-qr_only.png${query ? `?${query}` : ''}`;
+    return `/api/qr-proxy?url=${encodeURIComponent(directUrl)}`;
 }
 
 async function fetchQrSrc(amount, description) {
@@ -667,6 +668,10 @@ if (downloadBtn) {
 
 /* ============ Khác ============ */
 
+const bankLogo = document.getElementById('bankLogo');
+const bankNameSpan = document.getElementById('bankNameSpan');
+const accountHolder = document.getElementById('accountHolder');
+
 if (barClose && announcementBar) {
     barClose.addEventListener('click', () => {
         announcementBar.classList.add('is-hidden');
@@ -682,9 +687,6 @@ if (bankLogo) {
 /* ============ Chuyển Tab Ngân Hàng ============ */
 
 const bankTabBtns = document.querySelectorAll('.tab-btn');
-const bankLogo = document.getElementById('bankLogo');
-const bankNameSpan = document.getElementById('bankNameSpan');
-const accountHolder = document.getElementById('accountHolder');
 
 const tpbankHistorySection = document.getElementById('tpbankHistorySection');
 
@@ -920,8 +922,14 @@ async function loadInitialTransactions() {
     }
 }
 
+let pollingIntervalId = null;
+
 function startPollingFallback() {
-    setInterval(async () => {
+    if (pollingIntervalId) {
+        clearInterval(pollingIntervalId);
+        pollingIntervalId = null;
+    }
+    pollingIntervalId = setInterval(async () => {
         try {
             const res = await fetch('/api/transactions');
             if (res.ok) {
@@ -941,11 +949,18 @@ function startPollingFallback() {
     }, 4000);
 }
 
-function initRealtimeEvents() {
-    if (window.EventSource) {
-        const eventSource = new EventSource('/api/events');
+let activeEventSource = null;
 
-        eventSource.addEventListener('tpbank_payment', (e) => {
+function initRealtimeEvents() {
+    if (activeEventSource) {
+        try { activeEventSource.close(); } catch (e) {}
+        activeEventSource = null;
+    }
+
+    if (window.EventSource) {
+        activeEventSource = new EventSource('/api/events');
+
+        activeEventSource.addEventListener('tpbank_payment', (e) => {
             try {
                 const tx = JSON.parse(e.data);
                 handleIncomingTpBankPayment(tx);
@@ -954,13 +969,19 @@ function initRealtimeEvents() {
             }
         });
 
-        eventSource.onerror = (err) => {
+        activeEventSource.onerror = (err) => {
             console.warn('Kết nối SSE bị ngắt, duy trì bằng Polling fallback...', err);
         };
     }
 
     startPollingFallback();
 }
+
+window.addEventListener('beforeunload', () => {
+    if (activeEventSource) {
+        try { activeEventSource.close(); } catch (e) {}
+    }
+});
 
 /* ============ Khởi tạo ============ */
 
