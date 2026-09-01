@@ -855,49 +855,35 @@ function handleIncomingTpBankPayment(tx) {
     if (tpBankHistoryList.length > 100) tpBankHistoryList.pop();
     renderHistoryTable(true);
 
-    // Chỉ xử lý thông báo nếu người dùng đang ở tab TPBank (Techcombank giữ nguyên)
-    if (currentBankKey === 'TPB') {
-        const currentAmount = parseMoney(amountInput.value);
+    // Bật thông báo Toast nhận tiền TPBank dù người dùng đang ở tab nào
+    const currentAmount = parseMoney(amountInput.value);
 
-        if (!currentAmount) {
-            // Trường hợp 1: Tạo mã QR KHÔNG số tiền
+    if (currentBankKey === 'TPB' && currentAmount) {
+        const expectedAmount = parseInt(currentAmount, 10);
+        const receivedAmount = parseInt(tx.transferAmount, 10);
+
+        if (receivedAmount === expectedAmount) {
             showToast({
-                type: 'dynamic',
-                badgeText: 'NHẬN CHUYỂN KHOẢN TPBANK',
-                title: 'Tài khoản TPBank vừa nhận tiền',
+                type: 'matched',
+                badgeText: 'XÁC NHẬN KHỚP SỐ TIỀN ✓',
+                title: 'Đã nhận đúng số tiền trên mã QR TPBank!',
                 amount: tx.transferAmount,
                 sender: tx.description || tx.content || 'Khách hàng',
                 content: tx.content
             });
-        } else {
-            // Trường hợp 2: Tạo mã QR CÓ số tiền
-            const expectedAmount = parseInt(currentAmount, 10);
-            const receivedAmount = parseInt(tx.transferAmount, 10);
-
-            if (receivedAmount === expectedAmount) {
-                // Khớp chính xác số tiền!
-                showToast({
-                    type: 'matched',
-                    badgeText: 'XÁC NHẬN KHỚP SỐ TIỀN ✓',
-                    title: 'Đã nhận đúng số tiền trên mã QR!',
-                    amount: tx.transferAmount,
-                    sender: tx.description || tx.content || 'Khách hàng',
-                    content: tx.content
-                });
-                setStatus('ready', 'Đã thanh toán ✓');
-            } else {
-                // Thực nhận khác với số tiền khởi tạo trên QR
-                showToast({
-                    type: 'dynamic',
-                    badgeText: 'NHẬN TIỀN (KHÁC SỐ TIỀN QR)',
-                    title: 'Tài khoản TPBank vừa nhận tiền',
-                    amount: tx.transferAmount,
-                    sender: tx.description || tx.content || 'Khách hàng',
-                    content: tx.content
-                });
-            }
+            setStatus('ready', 'Đã thanh toán ✓');
+            return;
         }
     }
+
+    showToast({
+        type: 'dynamic',
+        badgeText: 'NHẬN CHUYỂN KHOẢN TPBANK',
+        title: 'Tài khoản TPBank vừa nhận tiền',
+        amount: tx.transferAmount,
+        sender: tx.description || tx.content || 'Khách hàng',
+        content: tx.content
+    });
 }
 
 async function loadInitialTransactions() {

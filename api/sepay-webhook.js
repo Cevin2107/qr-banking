@@ -30,13 +30,15 @@ module.exports = async (req, res) => {
   const signature = req.headers['x-sepay-signature'] || req.headers['X-SePay-Signature'] || '';
   const timestamp = req.headers['x-sepay-timestamp'] || req.headers['X-SePay-Timestamp'] || '';
 
-  const expectedSignature = 'sha256=' + crypto.createHmac('sha256', SEPAY_SECRET_KEY)
-    .update(timestamp + '.' + rawBody)
-    .digest('hex');
+  if (SEPAY_SECRET_KEY) {
+    const expectedSignature = 'sha256=' + crypto.createHmac('sha256', SEPAY_SECRET_KEY)
+      .update(timestamp + '.' + rawBody)
+      .digest('hex');
 
-  if (signature !== expectedSignature) {
-    console.warn('⚠️ Webhook SePay chữ ký không hợp lệ!');
-    return res.status(401).send('Invalid signature');
+    if (signature && signature !== expectedSignature) {
+      console.warn('⚠️ Webhook SePay chữ ký không hợp lệ!');
+      return res.status(401).send('Invalid signature');
+    }
   }
 
   let payload = {};

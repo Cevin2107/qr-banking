@@ -185,6 +185,57 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/transactions') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
+
+    let SEPAY_API_KEY = process.env.SEPAY_API_KEY || '';
+    if (!SEPAY_API_KEY && fs.existsSync(path.join(__dirname, '.env'))) {
+      const envContent = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+      const match = envContent.match(/SEPAY_API_KEY=(.*)/);
+      if (match) SEPAY_API_KEY = match[1].trim().replace(/^["']|["']$/g, '');
+    }
+    if (SEPAY_API_KEY && typeof fetch !== 'undefined') {
+      try {
+        const apiRes = await fetch('https://my.sepay.vn/userapi/transactions/list?limit=20', {
+          headers: {
+            'Authorization': `Bearer ${SEPAY_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        if (apiRes.ok) {
+          const data = await apiRes.json();
+          const list = Array.isArray(data.transactions) ? data.transactions : [];
+          const formatted = list
+            .filter(item => Number(item.amount_in || 0) > 0)
+            .map(item => ({
+              id: item.id,
+              gateway: item.bank_brand_name || 'TPBank',
+              transactionDate: item.transaction_date,
+              accountNumber: item.account_number,
+              content: item.transaction_content || '',
+              description: item.transaction_content || '',
+              transferAmount: Number(item.amount_in || 0),
+              referenceCode: item.reference_number || '',
+              receivedAt: item.transaction_date
+            }));
+
+          const existingIds = new Set(formatted.map(t => String(t.id)));
+          for (const ramTx of tpBankTransactions) {
+            if (!existingIds.has(String(ramTx.id))) {
+              formatted.unshift(ramTx);
+            }
+          }
+
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: true,
+            transactions: formatted
+          }));
+          return;
+        }
+      } catch (e) {
+        console.error('❌ Lỗi gọi SePay API:', e);
+      }
+    }
+
     res.writeHead(200);
     res.end(JSON.stringify({
       success: true,
