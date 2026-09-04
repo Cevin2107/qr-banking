@@ -69,13 +69,22 @@ function formatDisplayAmount(amount) {
 
 /* ============ Nguồn ảnh QR ============ */
 
+function getProxiedQrUrl(url) {
+    if (!url) return '';
+    if (url.startsWith('/api/qr-proxy') || url.startsWith('data:')) return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return `/api/qr-proxy?url=${encodeURIComponent(url)}`;
+    }
+    return url;
+}
+
 function buildDirectQrUrl(addInfo) {
     const acc = getActiveAccount();
     const params = new URLSearchParams();
     if (addInfo) params.set('addInfo', addInfo);
     const query = params.toString();
     const directUrl = `https://img.vietqr.io/image/${acc.bin}-${acc.accountNumber}-qr_only.png${query ? `?${query}` : ''}`;
-    return `/api/qr-proxy?url=${encodeURIComponent(directUrl)}`;
+    return getProxiedQrUrl(directUrl);
 }
 
 async function fetchQrSrc(amount, description) {
@@ -99,7 +108,7 @@ async function fetchQrSrc(amount, description) {
     if (!data.success || !data.qrCode) {
         throw new Error(data.error || 'Không tạo được mã QR');
     }
-    return data.qrCode;
+    return getProxiedQrUrl(data.qrCode);
 }
 
 /* ============ Trạng thái console ============ */
@@ -117,13 +126,14 @@ function updateDetailRows(amount, description) {
 }
 
 function applyQr(src) {
-    currentQrSrc = src;
-    if (qrImg.getAttribute('src') === src) {
+    const proxiedSrc = getProxiedQrUrl(src);
+    currentQrSrc = proxiedSrc;
+    if (qrImg.getAttribute('src') === proxiedSrc) {
         qrFrame.classList.remove('is-refreshing');
         setStatus('ready', 'Chờ thanh toán');
         return;
     }
-    qrImg.src = src;
+    qrImg.src = proxiedSrc;
 }
 
 qrImg.addEventListener('load', () => {
@@ -244,28 +254,17 @@ if (shareBtn) {
             // 1. Thử chia sẻ qua Web Share API (native share sheet)
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 try {
-                    // Thử với đầy đủ title, text và files
                     await navigator.share({
-                        title: 'Mã QR CevinPay',
-                        text: 'Mã QR nhận chuyển khoản VietQR',
                         files: [file]
                     });
                     isShared = true;
                     flashButton(shareBtn, 'Đã chia sẻ ✓');
                 } catch (shareErr) {
                     if (shareErr.name === 'AbortError') {
-                        // Người dùng chủ động hủy chia sẻ
+                        // Người dùng hủy chia sẻ từ native share sheet
                         return;
                     }
-                    // Thử lại chỉ với files (một số môi trường PWA/iOS không chấp nhận kết hợp text + files)
-                    try {
-                        await navigator.share({ files: [file] });
-                        isShared = true;
-                        flashButton(shareBtn, 'Đã chia sẻ ✓');
-                    } catch (shareErr2) {
-                        if (shareErr2.name === 'AbortError') return;
-                        console.warn('Web Share failed in PWA mode, using fallback:', shareErr2);
-                    }
+                    console.warn('Web Share API failed, using fallback:', shareErr);
                 }
             }
 
