@@ -23,6 +23,11 @@
 <body>
     <main class="app-main">
         <div class="app-container">
+            <nav class="app-views" aria-label="Chức năng">
+                <button type="button" class="btn" id="qrViewBtn" aria-controls="qrView" aria-pressed="true">Mã QR</button>
+                <button type="button" class="btn" id="debtViewBtn" aria-controls="debtView" aria-pressed="false">Ghi nợ</button>
+            </nav>
+            <div id="qrView" class="qr-view">
             <!-- 1. Cụm Mã QR ở đầu trang -->
             <section class="console-card" id="qrConsole" aria-live="polite">
                 <div class="console-head">
@@ -90,7 +95,7 @@
                 <div class="field">
                     <label class="label-mono" for="amount">Số tiền · VNĐ</label>
                     <div class="input-wrap">
-                        <input type="text" id="amount" inputmode="numeric" placeholder="50,000">
+                        <input type="text" id="amount" inputmode="numeric" data-money-input placeholder="50.000">
                         <span class="suffix" aria-hidden="true">&#8363;</span>
                     </div>
                     <small>Để trống để người chuyển tự nhập số tiền.</small>
@@ -139,6 +144,22 @@
                 </div>
             </section>
 
+            </div>
+
+            <section class="form-card debt-view" id="debtView" aria-labelledby="debtTitle" hidden>
+                <header class="debt-heading">
+                    <div>
+                        <h2 id="debtTitle">Sổ ghi nợ</h2>
+                        <p>Khoản nợ được lưu trên trình duyệt này.</p>
+                    </div>
+                    <button type="button" class="btn btn-pill-dark" id="addDebtBtn">Thêm khoản nợ</button>
+                </header>
+                <p class="debt-summary" id="debtSummary" aria-live="polite"></p>
+                <p class="debt-message" id="debtMessage" role="status"></p>
+                <ul class="debt-list" id="debtOpenList"></ul>
+                <p id="debtEmpty" class="debt-empty">Chưa có khoản nào cần thu.</p>
+            </section>
+
             <footer class="app-footer">
                 <p>Hệ thống được phát triển bởi <strong>Đào Bá Anh Quân</strong></p>
             </footer>
@@ -148,7 +169,71 @@
     <!-- Toast Notification Container (đặt ngoài khung QR) -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
+    <dialog class="debt-dialog" id="debtEditDialog" aria-labelledby="debtEditTitle">
+        <form id="debtEditForm" class="debt-dialog-body">
+            <h2 id="debtEditTitle">Thêm khoản nợ</h2>
+            <div class="field">
+                <label for="debtName">Họ tên người nợ</label>
+                <input id="debtName" required maxlength="64" autofocus>
+            </div>
+            <div class="field">
+                <label for="debtAmount">Số tiền (₫)</label>
+                <input id="debtAmount" inputmode="numeric" data-money-input required maxlength="21" placeholder="50.000">
+            </div>
+            <div class="field">
+                <label for="debtNote">Nợ về việc gì? (không bắt buộc)</label>
+                <input id="debtNote" maxlength="160">
+            </div>
+            <p class="debt-message" id="debtEditMessage" role="status"></p>
+            <div class="debt-actions">
+                <button type="button" class="btn debt-secondary" data-close-dialog>Hủy</button>
+                <button class="btn btn-pill-dark">Lưu khoản nợ</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="debt-dialog" id="debtQrDialog" aria-labelledby="debtQrTitle">
+        <form id="debtQrForm" class="debt-dialog-body">
+            <h2 id="debtQrTitle">Tạo QR thu nợ</h2>
+            <div class="field">
+                <label for="debtBank">Tài khoản nhận</label>
+                <select id="debtBank">
+                    <option value="TCB">Techcombank</option>
+                    <option value="TPB">TPBank</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="debtQrAmount">Số tiền trên QR (₫)</label>
+                <input id="debtQrAmount" inputmode="numeric" data-money-input required maxlength="21">
+            </div>
+            <div class="field">
+                <label for="debtQrNote">Nội dung chuyển khoản</label>
+                <input id="debtQrNote" maxlength="80">
+            </div>
+            <p class="debt-message" id="debtQrMessage" role="status"></p>
+            <div class="debt-actions">
+                <button type="button" class="btn debt-secondary" data-close-dialog>Hủy</button>
+                <button class="btn btn-pill-dark" id="debtGenerateBtn">Tạo QR</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="debt-dialog" id="debtBillDialog" aria-labelledby="debtBillTitle">
+        <div class="debt-dialog-body">
+            <h2 id="debtBillTitle">QR thanh toán khoản nợ</h2>
+            <img id="debtBillImage" alt="Bill VietQR thanh toán khoản nợ">
+            <p id="debtBillDetails" class="debt-bill-details"></p>
+            <p class="debt-message" id="debtBillMessage" role="status"></p>
+            <div class="debt-actions">
+                <button type="button" class="btn debt-secondary" data-close-dialog>Xong</button>
+                <button type="button" class="btn debt-secondary" id="debtShareBtn">Chia sẻ ảnh</button>
+                <button type="button" class="btn btn-pill-dark" id="debtBillPaidBtn">Đã thanh toán</button>
+            </div>
+        </div>
+    </dialog>
+
     <script src="script.js"></script>
+    <script src="debts.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

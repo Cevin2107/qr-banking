@@ -87,8 +87,7 @@ function buildDirectQrUrl(addInfo) {
     return getProxiedQrUrl(directUrl);
 }
 
-async function fetchQrSrc(amount, description) {
-    const acc = getActiveAccount();
+async function fetchQrSrc(amount, description, acc = getActiveAccount()) {
     if (!amount) {
         return buildDirectQrUrl(description);
     }
@@ -176,20 +175,58 @@ async function refreshQr() {
 
 /* ============ Input số tiền: format + giữ vị trí con trỏ ============ */
 
-amountInput.addEventListener('input', (e) => {
-    const cursorPosition = e.target.selectionStart;
-    const oldValue = e.target.value;
-    const oldLength = oldValue.length;
+function bindMoneyInput(input) {
+    const field = input.closest('.field');
+    const suggestions = document.createElement('div');
+    suggestions.className = 'money-suggestions';
+    suggestions.setAttribute('role', 'group');
+    suggestions.setAttribute('aria-label', 'Số tiền gợi ý');
+    suggestions.hidden = true;
+    const anchor = input.closest('.input-wrap') ?? input;
+    anchor.after(suggestions);
 
-    const formatted = formatMoney(oldValue);
-    e.target.value = formatted;
+    input.addEventListener('input', () => {
+        const digitsBeforeCaret = input.value.slice(0, input.selectionStart).replace(/\D/g, '').length;
+        const formatted = formatMoney(input.value);
+        if (formatted !== input.value) {
+            input.value = formatted;
+            const caret = digitsBeforeCaret ? [...formatted.matchAll(/\d/g)][digitsBeforeCaret - 1].index + 1 : 0;
+            input.setSelectionRange(caret, caret);
+        }
 
-    const newLength = formatted.length;
-    const newPosition = Math.max(0, cursorPosition + (newLength - oldLength));
-    e.target.setSelectionRange(newPosition, newPosition);
+        suggestions.replaceChildren();
+        if (document.activeElement === input) {
+            const amount = Number(input.value.replace(/\./g, ''));
+            if (Number.isSafeInteger(amount) && amount > 0) {
+                let first = amount * 10;
+                while (first < 1000) first *= 10;
+                const max = Number(input.dataset.maxAmount ?? Number.MAX_SAFE_INTEGER);
+                for (const suggested of [first, first * 10, first * 100]) {
+                    if (!Number.isSafeInteger(suggested) || suggested > max) break;
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.textContent = `${formatMoney(suggested)}đ`;
+                    button.addEventListener('pointerdown', (event) => event.preventDefault());
+                    button.addEventListener('click', () => {
+                        input.value = formatMoney(suggested);
+                        input.focus();
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        suggestions.hidden = true;
+                    });
+                    suggestions.append(button);
+                }
+            }
+        }
+        suggestions.hidden = !suggestions.childElementCount;
+    });
 
-    scheduleQrRefresh();
-});
+    field.addEventListener('focusout', (event) => {
+        if (!field.contains(event.relatedTarget)) suggestions.hidden = true;
+    });
+}
+
+document.querySelectorAll('[data-money-input]').forEach(bindMoneyInput);
+amountInput.addEventListener('input', scheduleQrRefresh);
 
 descriptionInput.addEventListener('input', () => {
     updateDetailRows(parseMoney(amountInput.value), descriptionInput.value.trim());
@@ -325,7 +362,7 @@ async function loadQrImageForBill(src) {
     if (!src) return null;
 
     // Fast-path: Nếu ảnh trên DOM đã nạp xong và không bị dính lỗi CORS, dùng trực tiếp để tránh delay network
-    if (qrImg && qrImg.complete && qrImg.naturalWidth > 0) {
+    if (qrImg && qrImg.src === new URL(src, location.href).href && qrImg.complete && qrImg.naturalWidth > 0) {
         try {
             const testCanvas = document.createElement('canvas');
             testCanvas.width = 1;
@@ -433,14 +470,16 @@ function drawCornerBrackets(ctx, x, y, width, height, length = 24, color = '#171
     ctx.restore();
 }
 
-async function renderBillCanvas() {
+async function renderBillCanvas({
+    acc = getActiveAccount(),
+    amount = parseMoney(amountInput.value),
+    description = descriptionInput.value.trim(),
+    src = currentQrSrc
+} = {}) {
     await ensureBillFonts();
 
-    const acc = getActiveAccount();
-    const amount = parseMoney(amountInput.value);
-    const description = descriptionInput.value.trim();
-
-    const qrImage = await loadQrImageForBill(currentQrSrc);
+    const qrImage = await loadQrImageForBill(src);
+    if (src && !qrImage) throw new Error('Không tải được ảnh QR');
     const qrSide = 540;
     const qrBoxPad = 32;
     const qrBoxSide = qrSide + qrBoxPad * 2;
