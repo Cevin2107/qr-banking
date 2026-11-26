@@ -6,7 +6,7 @@ const ACCOUNTS = {
         code: 'TCB',
         shortName: 'Techcombank',
         fullName: 'Ngân hàng TMCP Kỹ Thương Việt Nam',
-        accountNumber: '19037817132016',
+        accountNumber: '2107210706',
         accountHolder: 'DAO BA ANH QUAN',
         logoUrl: 'https://cdn.vietqr.io/img/TCB.png'
     },
